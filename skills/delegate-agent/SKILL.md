@@ -21,6 +21,29 @@ This skill is model-agnostic by design. Before the first delegation, resolve two
 
 **If either is unknown, ask the user which command/alias to use and what its context window is — never guess.** Once known for this project, treat them as fixed for the rest of the task. If this becomes a repeat pattern, worth noting the alias in a project `CLAUDE.md` so future sessions don't have to ask again.
 
+## Setting up `AGENT_CMD` (one-time, per model)
+
+`AGENT_CMD` must be an *agentic* CLI running headless — it takes a prompt and can call tools (Bash/Read/Edit/…) without a human clicking through permission prompts. A raw chat CLI (`ollama run`, a bare chatbot REPL) is **not** enough by itself; it has no tool-calling loop.
+
+Two ways to get there:
+
+**A. Point Claude Code itself at a different model** (this is what the original `claude-9arm` alias did, against 9arm's internal Qwen gateway)
+
+Claude Code talks to whatever backend `ANTHROPIC_BASE_URL` points at, as long as that backend speaks the Anthropic Messages API. Put a translating proxy in front of your model of choice, then alias Claude Code to it:
+
+1. Run a proxy that exposes an Anthropic-compatible endpoint backed by your model of choice — [LiteLLM](https://docs.litellm.ai/) is the common self-hosted option; it can front Ollama, OpenRouter, Together, vLLM, Bedrock, and others.
+2. Alias Claude Code to it:
+   ```bash
+   alias claude-cheap='ANTHROPIC_BASE_URL=http://localhost:4000 ANTHROPIC_API_KEY=sk-litellm-key claude --model <model-id-your-proxy-serves>'
+   ```
+3. Set `AGENT_CMD=claude-cheap`. You now get Claude Code's full tool-execution loop (Bash/Read/Edit/…), just running on the cheaper backend model.
+
+**B. Use a different agentic CLI that natively supports your model**
+
+Tools like `aider`, `opencode`, or a vendor CLI (`codex`, `gemini`) already talk to their own backends — some support local Ollama models directly, no proxy needed. Install the CLI, find its non-interactive/headless flag and its way to scope tool permissions (these won't match Claude Code's `-p` / `--allowedTools` syntax — check that CLI's own docs), and set `AGENT_CMD` to that invocation.
+
+**Before delegating anything, smoke-test `AGENT_CMD` standalone**: run it on a trivial throwaway prompt (e.g. "create a file at /tmp/smoketest.txt containing OK") and confirm it actually acts, rather than stalling on a permission prompt or just chatting back. If it hangs, the headless/tool-scoping flags are wrong — fix that before trying to delegate real work.
+
 ## Running a delegated task
 
 ```bash
