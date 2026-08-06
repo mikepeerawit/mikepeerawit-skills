@@ -14,7 +14,7 @@ npx skills add mikepeerawit/mikepeerawit-skills -s delegate-agent
 
 | Skill | Description |
 |---|---|
-| [`delegate-agent`](skills/delegate-agent/SKILL.md) | Delegate menial, well-scoped coding tasks to a cheaper/faster subagent model (any model — not tied to one vendor) instead of burning the primary model's tokens/quota. |
+| [`delegate-agent`](skills/delegate-agent/SKILL.md) | Delegate menial, well-scoped coding tasks to a cheaper subagent model (any model — not tied to one vendor) to cut cost, saving the primary model's tokens/quota for work that needs real reasoning. |
 | [`stay-on-track`](skills/stay-on-track/SKILL.md) | Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, watches the context budget, and triggers a clean handoff before the window fills. |
 
 ## Credits
