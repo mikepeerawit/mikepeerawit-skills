@@ -5,6 +5,8 @@ description: Keeps a long Claude Code task on-track — breaks out of looping/ci
 
 # Staying on Track
 
+> Renamed from [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — content unchanged, since the original was already model-agnostic. Credit to 9arm for the underlying design.
+
 Long, multi-step work fails three ways: **looping**, **over-thinking**, and **running out of context**. Run the checklist below **before each step**. When a trigger fires, do the matching action — don't deliberate about it.
 
 ## Before each step — run this

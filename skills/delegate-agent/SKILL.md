@@ -5,6 +5,8 @@ description: Delegate menial, well-scoped coding tasks to a cheaper/faster subag
 
 # delegate-agent
 
+> Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills), generalized beyond its original Qwen-specific setup. Credit to 9arm for the underlying design.
+
 Offload **menial, self-contained** tasks to a cheaper/faster model running headless, so the primary model's context and quota stay reserved for work that actually needs reasoning.
 
 ## Configuration — resolve this once per model you delegate to
