@@ -1,0 +1,24 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "mikepeerawit-skills",
+  "description": "Personal Claude Code skills for keeping long agent tasks cheap and on-track",
+  "owner": {
+    "name": "Peerawit Chariyawongsiri",
+    "url": "https://github.com/mikepeerawit"
+  },
+  "plugins": [
+    {
+      "name": "mikepeerawit-skills",
+      "source": "./",
+      "description": "Two skills for long-running Claude Code work: delegate menial tasks to a cheaper model, and keep long tasks from looping or running out of context.",
+      "author": {
+        "name": "Peerawit Chariyawongsiri",
+        "url": "https://github.com/mikepeerawit"
+      },
+      "category": "productivity",
+      "keywords": ["skills", "delegation", "context-management", "cost"],
+      "homepage": "https://github.com/mikepeerawit/mikepeerawit-skills",
+      "license": "MIT"
+    }
+  ]
+}

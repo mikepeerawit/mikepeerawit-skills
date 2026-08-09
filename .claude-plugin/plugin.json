@@ -1,0 +1,11 @@
+{
+  "name": "mikepeerawit-skills",
+  "description": "Two skills for long-running Claude Code work: delegate menial tasks to a cheaper model, and keep long tasks from looping or running out of context.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Peerawit Chariyawongsiri",
+    "url": "https://github.com/mikepeerawit"
+  },
+  "homepage": "https://github.com/mikepeerawit/mikepeerawit-skills",
+  "license": "MIT"
+}

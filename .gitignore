@@ -1,0 +1,5 @@
+.DS_Store
+node_modules/
+
+# Machine-specific Claude Code settings (contains absolute local paths)
+.claude/settings.local.json
