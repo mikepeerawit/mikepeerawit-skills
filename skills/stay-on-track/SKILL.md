@@ -5,7 +5,7 @@ description: Keeps a long Claude Code task on-track — breaks out of looping/ci
 
 # Staying on Track
 
-> Renamed from [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — content unchanged, since the original was already model-agnostic. Credit to 9arm for the underlying design.
+> Adapted from [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — the original was already model-agnostic, so this is a rename plus a self-contained handoff procedure. Credit to 9arm for the underlying design.
 
 Long, multi-step work fails three ways: **looping**, **over-thinking**, and **running out of context**. Run the checklist below **before each step**. When a trigger fires, do the matching action — don't deliberate about it.
 
@@ -75,6 +75,14 @@ Before any **expensive** step (large read, new subtask, long generation), ask: *
 
 When context is tight or the user asks:
 
-1. **Land durable artifacts first** — save the file, commit, write the result. Nothing lost.
-2. **Invoke the `handoff` skill** to compact the conversation. Don't hand-write the handoff.
-3. Tell the user plainly: "Context is getting tight — handing off now; start a fresh session (`/clear`)."
+1. **Land durable artifacts first.** Save the file, commit, write the result. A handoff that loses work is not a handoff.
+2. **Write the handoff note** — everything the next session needs, and nothing else:
+   - **Goal** — the task, in one sentence.
+   - **Done** — what has landed: files changed, commands that worked, decisions already made.
+   - **Next** — the immediate next step, concrete enough to act on without re-deriving it.
+   - **Ruled out** — dead ends already tried, so the next session doesn't repeat them. This is the part that is lost if you skip it.
+
+   Put the note in the chat. If the work spans sessions, also write it to a file (`HANDOFF.md` or a scratch file) — chat scrollback is not durable.
+3. **Tell the user plainly:** "Context is getting tight — I've landed X and written a handoff. Start a fresh session with `/clear`." You cannot clear or compact the context yourself; the user runs `/clear` (fresh start) or `/compact` (summarize in place).
+
+If a handoff or compaction skill is installed in this environment, use it for step 2 instead of hand-writing the note — but check that it exists first. Never call a skill by name on the assumption it's available.
