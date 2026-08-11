@@ -41,7 +41,7 @@ Setting `AGENT_CMD` up the first time is covered in [`references/setup.md`](refe
 
 Cost-first is the default — that's the point of the skill. Override it for the task in front of you:
 
-- **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent.
+- **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent. When the backend is a wrapper that ranks internally, you get this only if it supports [pinning](references/setup.md#optional-pinning-one-backend) and the user has said so — never pin on the assumption it's honoured, because an ignored pin looks exactly like a successful one.
 - **Background, parallel or batch work** → keep the default order. Nobody's watching the clock.
 - **Needs more context than rank 1 offers** → drop to the first backend whose window fits, rather than splitting the task into chunks that no longer make sense on their own.
 

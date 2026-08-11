@@ -103,6 +103,11 @@ trap 'rm -f "$out"' EXIT
 trap 'rm -f "$out"; exit 130' INT    # must exit, not just clean up — see below
 trap 'rm -f "$out"; exit 143' TERM
 
+# One function per backend. Naming them keeps the invocation in a single place,
+# which is what makes the pinning block below a four-line addition.
+run_free() { claude --settings "$HOME/.claude-free.json"  --model=<free-model-id>  "$@"; }
+run_paid() { claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"; }
+
 # Errors Claude Code raises itself. Nearly all of them carry "API Error".
 sigs_cli='API Error|Failed to authenticate|Connection error|fetch failed|ECONNREFUSED'
 # Bare upstream errors a translating proxy passes through verbatim (route A2).
@@ -117,13 +122,13 @@ backend_failed() {
   grep -qiE "$sigs_cli|$sigs_upstream" "$out"
 }
 
-claude --settings "$HOME/.claude-free.json" --model=<free-model-id> "$@" >"$out"
+run_free "$@" >"$out"
 rc=$?   # not `status` — that name is read-only in zsh, which bites when you debug this by hand
 
 if backend_failed "$rc"; then
   echo "free backend down (exit $rc) — falling back to paid" >&2
   sed 's/^/  free: /' "$out" >&2
-  claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@" </dev/null
+  run_paid "$@" </dev/null
   exit $?
 fi
 cat "$out"; exit $rc
@@ -140,6 +145,34 @@ Five things worth knowing if you adapt this:
 - **Buffer output, never input.** Capturing stdout is what makes the test possible. Reading *stdin* into a file the same way hangs forever whenever nothing is piped in. Note the `</dev/null` on the fallback call: a *piped* prompt has already been consumed by the first backend, so the second would otherwise hang waiting on a stdin that will never arrive.
 
 **Keep the announcement.** Whatever wording you use, a wrapper that ranks backends must print *something* to stderr when it falls through. The skill's [own fallback procedure](../SKILL.md) branches on it: it's how the model knows the fallback has already happened and it must not re-run the prompt on the next backend itself.
+
+### Optional: pinning one backend
+
+Ranking is cost-first, which is the wrong order when someone is sitting there waiting for the answer. A ranked wrapper always spends the free backend's latency before reaching the fast one, and the skill has no way to say *skip it this time* — the wrapper owns the choice, and the skill only ever sees the result.
+
+`DELEGATE_BACKEND` is the escape hatch. Set it to one of your own backend labels and the wrapper runs that backend, only that one. Slot this above the ranked path, after the `run_*` functions:
+
+```sh
+case "${DELEGATE_BACKEND:-}" in
+  free) run_free "$@"; exit $? ;;
+  paid) run_paid "$@"; exit $? ;;
+  "") ;;                          # unset — fall through to the ranked path below
+  *)
+    echo "unknown DELEGATE_BACKEND '$DELEGATE_BACKEND' (want free|paid)" >&2
+    exit 2
+    ;;
+esac
+```
+
+The labels are yours to name — use whatever you'd actually type, usually the provider. Three rules are what make the variable worth honouring:
+
+| Rule | Why |
+|---|---|
+| A pin **disables fallback** | Pinning says *I know which one I want*. A wrapper that pins and then silently falls through to the other backend has answered a different question than the one you asked. |
+| An unknown value **exits nonzero**, naming the valid ones | A typo has to fail loudly. Ignoring it runs the default backend — spending exactly the cost, or exactly the latency, you set the variable to avoid. |
+| Unset means **the ranked path, unchanged** | Cost-first stays the default. Nothing about the no-pin case changes, so a wrapper gains pinning without gaining a decision. |
+
+**It's a convention, not a contract.** `AGENT_CMD` is an arbitrary user command, so nothing can oblige every wrapper to honour `DELEGATE_BACKEND` — a wrapper that ignores it is fully supported, and the skill never depends on it. That cuts both ways, which is why the skill must not set it on spec: an unimplemented variable is silently ignored, so a pin that did nothing is indistinguishable from a pin that worked.
 
 ## Step 4 — Confirm the model can use tools
 
