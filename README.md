@@ -1,47 +1,70 @@
 # mikepeerawit-skills
 
-Personal [Claude Code](https://claude.com/claude-code) skills for long-running agent work — keeping it cheap, and keeping it on-track.
+Two [Claude Code](https://claude.com/claude-code) skills for long agent sessions — one keeps the cost down, one keeps the work on-track.
+
+## New here? What a skill is
+
+A skill is a Markdown file of instructions that Claude Code loads **by itself**, when the situation calls for it. You install it once and then forget about it. Every skill starts with a description saying when it applies; Claude reads those descriptions and pulls in the matching skill mid-task.
+
+So you don't run these. You install them, and Claude reaches for them on its own — though you can always ask for one by name.
+
+## The skills
+
+### `delegate` — stop paying frontier prices for grunt work
+
+A long coding session burns through your Claude quota, and a lot of that burn is menial: renaming a symbol across 40 files, reformatting, condensing a 5,000-line log, running the test suite to see if it's green. None of that needs an expensive model.
+
+[`delegate`](skills/delegate/SKILL.md) teaches Claude to spot that kind of work and hand it to a cheaper model, then check the result the cheap way — running the tests, glancing at `git diff --stat` — rather than re-reading everything the cheap model produced. Checking work you delegated shouldn't cost as much as doing it yourself.
+
+It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, anything that depends on your conversation so far — those stay with the main model.
+
+**Cost to get started: nothing.** Out of the box it uses a cheap Claude subagent, which needs no setup or API key. If you want the savings to land on *someone else's* bill instead of your Anthropic quota, you can point it at an outside provider — that's the one-time setup in [`references/setup.md`](skills/delegate/references/setup.md).
+
+### `focus` — keep a long task from going off the rails
+
+Long multi-step work fails in a few recognizable ways. The agent re-reads the same file for the third time. It reasons in circles without doing anything. It quietly wanders into work you never asked for, or quietly drops part of what you did ask for. Or it runs out of room and forgets what it learned an hour ago.
+
+[`focus`](skills/focus/SKILL.md) gives Claude a short checklist to run before each step, with a specific fix for each failure. It also handles the handoff when a session is about to run out of context, so the next session starts with what the last one learned instead of from scratch.
 
 ## Install
 
-Via [`npx skills`](https://skills.sh/):
+The easiest way, via [`npx skills`](https://skills.sh/):
 
 ```bash
-npx skills add mikepeerawit/mikepeerawit-skills          # pick interactively
-npx skills add mikepeerawit/mikepeerawit-skills --all     # install everything
-npx skills add mikepeerawit/mikepeerawit-skills -s delegate
+npx skills add mikepeerawit/mikepeerawit-skills          # choose from a menu
+npx skills add mikepeerawit/mikepeerawit-skills --all    # install both
+npx skills add mikepeerawit/mikepeerawit-skills -s delegate   # just one
 ```
 
-Or as a Claude Code plugin, from inside Claude Code:
+Or as a Claude Code plugin, typed inside Claude Code:
 
 ```
 /plugin marketplace add mikepeerawit/mikepeerawit-skills
 /plugin install mikepeerawit-skills
 ```
 
-## Skills
+Either way, ask Claude to "list your skills" afterwards to confirm they landed.
 
-| Skill | Description |
-|---|---|
-| [`delegate`](skills/delegate/SKILL.md) | Delegate menial, well-scoped coding tasks to a cheaper subagent model to reduce the primary model's token burn, saving its tokens/quota for work that needs real reasoning. |
-| [`focus`](skills/focus/SKILL.md) | Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, catches drift from what was actually asked, and checkpoints work that compaction would otherwise lose. |
+## Contributing
 
-## Development
+Run the checks before opening a PR:
 
 ```bash
 node scripts/validate.mjs
 ```
 
-Checks every skill for well-formed frontmatter, a `name` matching its directory, a description within Claude Code's 1024-character limit, and working relative links — plus that the table above matches what's actually in `skills/`. CI runs this on every push and PR.
+It verifies every skill has well-formed frontmatter, a `name` matching its directory, a description inside Claude Code's 1024-character limit, and working relative links — plus that the skill list above matches what's actually in `skills/`. CI runs the same thing on every push and PR.
 
 Layout:
 
 ```
-skills/<name>/SKILL.md          # the skill itself — always loaded when it fires
-skills/<name>/references/*.md   # detail loaded on demand, not on every invocation
+skills/<name>/SKILL.md          # the skill itself — loaded in full whenever it fires
+skills/<name>/references/*.md   # detail loaded only on demand
 ```
 
-Keep `SKILL.md` to the procedure. Anything a reader needs once — one-time setup, background, long examples — belongs in `references/`, linked from `SKILL.md`.
+That split is the main thing to respect when editing. Everything in `SKILL.md` costs tokens every single time the skill fires, so it holds the procedure and nothing else. Anything a reader needs only once — one-time setup, background, long examples — goes in `references/` behind a link.
+
+Worth knowing if you're new to writing skills: `SKILL.md` is written for Claude to read, not for a person. It's terse and imperative on purpose. The human-friendly explanations belong here in the README and in `references/`.
 
 ## Credits
 

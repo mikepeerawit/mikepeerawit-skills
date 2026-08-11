@@ -1,24 +1,44 @@
-# Setting up `AGENT_CMD`
+# Setting up a cheaper backend (`AGENT_CMD`)
 
-One-time setup, per model you want to delegate to. Read this only when `AGENT_CMD` does not yet exist for this project, or when it exists but hangs / refuses to act.
+One-time setup, once per model you want to delegate to. Read this only when `AGENT_CMD` does not yet exist, or when it exists but hangs or refuses to act.
 
-`AGENT_CMD` must be an *agentic* CLI running headless — it takes a prompt and can call tools (Bash/Read/Edit/…) without a human clicking through permission prompts. A raw chat CLI (`ollama run`, a bare chatbot REPL) is **not** enough by itself; it has no tool-calling loop.
+## Do you actually need this?
 
-**Data egress:** any backend other than Anthropic's own means the code you delegate leaves Anthropic's boundary and lands under that provider's retention and training policy. Pick backends accordingly, and don't delegate on code you can't send there.
+**No** — if you just want menial work off your main model. The skill's rank 0 (a cheap Claude subagent) needs no setup, no key, no config, and works right now.
 
-Two ways to get there.
+**Yes** — if you want delegated work billed to *someone other than Anthropic*, or you need a model Anthropic doesn't serve. That's the only thing this page buys you.
 
-## A. Point Claude Code itself at a cheaper backend
+## What you're building
 
-Claude Code talks to whatever backend `ANTHROPIC_BASE_URL` points at, as long as that backend speaks the Anthropic Messages API. You get Claude Code's full tool-execution loop (Bash/Read/Edit/…), just running on a cheaper model.
+`AGENT_CMD` is an environment variable holding **the name of a command** — a command that runs a coding agent, on a cheap model, without a human watching. The skill then calls it like this:
 
-Whether you need a proxy depends entirely on the backend.
+```bash
+$AGENT_CMD -p "<the whole task, spelled out>" --allowedTools Read Glob Grep
+```
 
-### A1. Backend already speaks the Anthropic Messages API — no proxy
+Three terms worth pinning down, because the rest of this page leans on them:
 
-Prefer this. Aggregators and gateways increasingly expose a native Anthropic-compatible endpoint, so there is nothing to run locally.
+- **Agentic CLI** — a command-line tool that can actually *do* things: read files, edit them, run commands. Claude Code is one. A plain chat CLI (`ollama run`, a bare chatbot prompt) is **not** — it can only talk back, so it will describe the edit you asked for instead of making it.
+- **Headless** — running with no interactive prompts. Nobody is there to approve "can I edit this file?", so the command has to be told its permissions up front.
+- **Anthropic Messages API** — the request format Claude Code speaks. Any backend that speaks the same format can stand in for Anthropic, which is what makes this whole thing possible.
 
-[OpenRouter](https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration) is the common case — one key, hundreds of models:
+**Before you start — where your code ends up.** Any backend other than Anthropic's own means the code you delegate leaves Anthropic's boundary and lands under that provider's retention and training policy. Choose accordingly, and don't delegate work on code you can't send there.
+
+## Step 1 — Pick a route
+
+| Route | Use when | Effort |
+|---|---|---|
+| **A1. Claude Code → provider's Anthropic-compatible endpoint** | Your provider offers one (most aggregators now do) | Lowest — a config file |
+| **A2. Claude Code → translating proxy → backend** | Backend speaks a different format: local Ollama, self-hosted vLLM, a raw OpenAI-shaped API | A server to run and keep up |
+| **B. A different agentic CLI entirely** | `aider`, `opencode`, `codex`, `gemini` — already talks to your model | Its own flags, its own docs |
+
+Start at A1 and only leave it if your backend forces you to. A2 means one more process that can be down at the moment you need to delegate — several once-popular translating proxies have been archived precisely because native support landed upstream.
+
+## Step 2 — Write a settings file (route A1)
+
+Claude Code sends its requests wherever `ANTHROPIC_BASE_URL` points, so long as that address speaks the Messages API. You keep Claude Code's full ability to run tools; only the model underneath changes.
+
+[OpenRouter](https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration) is the common case — one key, hundreds of models. Save this as `~/.claude-cheap.json`:
 
 ```json
 {
@@ -37,96 +57,117 @@ Prefer this. Aggregators and gateways increasingly expose a native Anthropic-com
 }
 ```
 
-Save that as e.g. `~/.claude-cheap.json`, then alias Claude Code to it and set `AGENT_CMD=claude-cheap`:
+Then `chmod 600 ~/.claude-cheap.json` — it holds an API key. A settings file beats putting `ENV=x claude` in a shell alias: the key stays out of your shell history and out of `ps` output, and the file copies cleanly between machines.
 
-```bash
-alias claude-cheap='claude --settings ~/.claude-cheap.json --model <cheap-model-id>'
+Four things bite people here:
+
+- **Fill in every model slot, not just `--model`.** This is the expensive mistake. `--model` sets only the main conversation; Claude Code keeps *separate* slots for background work (`ANTHROPIC_DEFAULT_HAIKU_MODEL`), subagents (`CLAUDE_CODE_SUBAGENT_MODEL`), and name resolution (the `OPUS`/`SONNET`/`FABLE` entries). **Any slot left blank falls back to Claude Code's built-in Anthropic model IDs** — and your aggregator will happily serve those at full Anthropic price, on your key. `ANTHROPIC_BASE_URL` changes *where* the request goes, not *which model* answers it. Measured on one setup: the identical trivial prompt cost 5.8× more with the slots left blank. The tell is an expensive model you never asked for showing up in your provider's activity log.
+- **`ANTHROPIC_API_KEY` vs `ANTHROPIC_AUTH_TOKEN`.** Two different ways to authenticate, and published guides disagree about which one any given gateway wants. Set one, explicitly leave the other empty, and let the smoke test in step 5 settle it. Getting it wrong shows up as 401 errors — or, worse, as Claude Code quietly using your normal Anthropic account instead of the cheap backend.
+- **Already signed in?** Run `/logout` first. Otherwise your existing account credentials win over the settings file.
+- **Cap the spend at the provider** if it offers per-key limits. Delegated runs happen unattended, so a misconfiguration surfaces as a bill rather than as an error message.
+
+For **route A2**, the settings file is the same idea with a local address — point `ANTHROPIC_BASE_URL` at your proxy (e.g. `http://localhost:4000`) and set `ANTHROPIC_API_KEY` to whatever key the proxy expects. [LiteLLM](https://docs.litellm.ai/) is the usual self-hosted choice.
+
+For **route B**, skip to that CLI's own docs: find its headless flag and its way to scope tool permissions. They **won't** match Claude Code's `-p` / `--allowedTools` syntax.
+
+## Step 3 — Make it callable
+
+`AGENT_CMD` has to be a real command on your `PATH`. A shell **alias will not work** — aliases don't expand in scripts or non-interactive shells, which is exactly how the skill calls it. Neither does a multi-word string: zsh, unlike bash, doesn't split unquoted `$VAR` into separate words, so it tries to run the whole string as one long filename.
+
+A one-line script sidesteps both. Save as `~/.local/bin/claude-cheap` and `chmod +x` it:
+
+```sh
+#!/bin/sh
+exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
 ```
 
-A settings file beats inlining `ENV=x claude` in the alias: it keeps the key out of your shell history and out of `ps` output, and it survives being copied between machines. `chmod 600` it — it holds a key.
-
-Four things that bite:
-
-- **Pin every model slot, not just `--model`.** This is the expensive one. `--model` sets only the main conversation model; Claude Code keeps separate slots for background work (`ANTHROPIC_DEFAULT_HAIKU_MODEL`), subagents (`CLAUDE_CODE_SUBAGENT_MODEL`), and alias resolution (the `OPUS`/`SONNET`/`FABLE` vars). **Any slot you leave unset falls through to Claude Code's built-in Anthropic model IDs** — and an aggregator will serve those at full Anthropic price against your key. `ANTHROPIC_BASE_URL` changes *where* requests go, not *which model* answers. Measured on one setup: an identical trivial prompt cost 5.8× more with the slots unset. Symptom is a frontier model you never asked for showing up in your provider's activity log.
-- **`ANTHROPIC_API_KEY` vs `ANTHROPIC_AUTH_TOKEN`** — these are separate auth paths and published guides disagree on which one a given gateway wants. Set one, explicitly empty the other, and confirm with the smoke test below. Symptom of getting it wrong: 401s, or the CLI silently using your normal Anthropic account instead of the cheap backend.
-- **Already logged in?** Run `/logout` first, or your existing account credentials take precedence over the settings file.
-- **Aliases don't expand in non-interactive shells.** If something invokes `AGENT_CMD` programmatically, expand it to the full `claude --settings … --model …` command.
-
-Cap spend at the provider if it supports per-key limits. Delegated runs are unattended, so a misconfiguration like the one above surfaces as a bill rather than an error.
-
-### A2. Backend doesn't speak the Anthropic API — translating proxy
-
-Only needed for backends with no Anthropic-compatible endpoint of their own: local Ollama, self-hosted vLLM, a raw OpenAI-shaped API. [LiteLLM](https://docs.litellm.ai/) is the usual self-hosted option.
+Then in your shell profile:
 
 ```bash
-alias claude-cheap='ANTHROPIC_BASE_URL=http://localhost:4000 ANTHROPIC_API_KEY=sk-litellm-key claude --model <model-id-your-proxy-serves>'
+export AGENT_CMD=claude-cheap
 ```
 
-Don't reach for this if A1 covers your backend — a proxy is one more process that can be down when you need to delegate. Several once-popular single-purpose translating proxies have been archived precisely because native support landed upstream.
+Claude Code snapshots your environment when a session starts, so a profile change is invisible to the session you're in and only takes effect in new ones. Check with `zsh -ic 'echo $AGENT_CMD'` — a plain `echo` inside the current session will read empty and mislead you.
 
-## B. Use a different agentic CLI that natively supports your model
+### Optional: several backends, cheapest first
 
-Tools like `aider`, `opencode`, or a vendor CLI (`codex`, `gemini`) already talk to their own backends — some support local Ollama models directly, no proxy needed.
+If you have more than one cheap backend, the same script can try them in order. Fall through **only** when a backend fails without producing output — that means it never really ran. If it printed something before dying it may already have edited files, and re-running the same prompt elsewhere risks doing the work twice.
 
-Install the CLI, find its non-interactive/headless flag and its way to scope tool permissions, and set `AGENT_CMD` to that invocation. These flags **won't** match Claude Code's `-p` / `--allowedTools` syntax — check that CLI's own docs.
+```sh
+#!/bin/sh
+out=$(mktemp); trap 'rm -f "$out"' EXIT
+claude --settings "$HOME/.claude-free.json" --model=<free-model-id> "$@" >"$out"
+status=$?
+if [ $status -ne 0 ] && [ ! -s "$out" ]; then
+  echo "free backend down — falling back to paid" >&2
+  claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@" </dev/null
+  exit $?
+fi
+cat "$out"; exit $status
+```
 
-## Check the model can actually call tools
+Buffering the output is what lets the script tell "never started" from "died partway". Don't buffer *input* the same way — reading stdin to a file hangs forever when nothing is piped in.
 
-Delegation is tool use. A model that chats well but calls tools badly is useless here — it will narrate the edit instead of making it. Cheap models are exactly where this fails, so check before committing.
+## Step 4 — Confirm the model can use tools
 
-If the backend publishes model metadata, read it. On OpenRouter:
+Delegation *is* tool use. A model that chats well but calls tools badly is useless here — it will narrate the edit instead of making it. Cheap models are exactly where this breaks, so check before you rely on it.
+
+If your provider publishes model metadata, read it first. On OpenRouter:
 
 ```bash
 curl -s https://openrouter.ai/api/v1/models \
   | jq -r '.data[] | select(.id=="<model-id>") | {context_length, tools: (.supported_parameters | index("tools") != null), pricing}'
 ```
 
-That also gives you the model's advertised `CONTEXT_WINDOW` — but treat it as an upper bound, not the answer. What the *harness* will actually use can be lower. With Claude Code, get the real figure from a live run:
+That also reports the model's advertised **context window** — how much text it can hold at once, which the skill uses to size tasks. Treat the advertised figure as an upper bound, not the answer. What Claude Code actually gives the model is often lower, and the real number comes from a live run:
 
 ```bash
 $AGENT_CMD -p "hi" --output-format json </dev/null | jq '.modelUsage'
 ```
 
-The `contextWindow` field there is what to size delegated tasks against. It can be several times smaller than the model's advertised window — one measured case reported 200K for a model documented at 1M. The same output gives a per-run cost, which is the quickest way to confirm the slot pinning above actually took effect.
+The `contextWindow` field there is the one to size against — it can be several times smaller than advertised (one measured case reported 200K for a model documented at 1M). The same output includes a per-run cost, which is the fastest way to confirm your model-slot pinning actually took effect.
 
-Note that Claude Code is tuned for Anthropic models, and vendors routing it to non-Anthropic models generally say so. Metadata claiming tool support is necessary, not sufficient — the smoke test is what settles it.
+Metadata claiming tool support is necessary but not sufficient. The smoke test is what settles it.
 
-## Smoke-test before delegating real work
+## Step 5 — Smoke-test before trusting it with real work
 
-Run `AGENT_CMD` standalone on a trivial throwaway prompt and confirm it actually *acts*, rather than stalling on a permission prompt or just chatting back:
+Run `AGENT_CMD` on a throwaway prompt and confirm it *acts*:
 
 ```bash
 $AGENT_CMD -p "create a file at <abs-path>/smoketest.txt containing OK" --allowedTools Bash Write
 ```
 
-Use a scratch path you're happy to delete. Then check the file exists — not that the model *said* it created it. If it hangs, the headless/tool-scoping flags are wrong. If it replies describing the file without writing one, the model isn't calling tools properly; pick a different model. Fix either before trying to delegate real work.
+Use a scratch path you're happy to delete. Then check the file exists — not that the model *said* it created one. Two failure modes, two different causes:
+
+- **It hangs** → the headless or tool-scoping flags are wrong.
+- **It replies describing the file, but no file appears** → the model isn't calling tools properly. Pick a different model; nothing else will fix this.
+
+Fix either before delegating real work.
 
 ## Invocation mechanics
 
-Once `AGENT_CMD` works, these are the flags a delegated run needs. The syntax below is Claude Code's; other CLIs have their own equivalents — check their docs.
+The flags a delegated run needs. This syntax is Claude Code's; other CLIs have their own equivalents.
 
 ```bash
 $AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep
 ```
 
-- **Scope the tools explicitly.** This is what lets a subagent finish unattended — without it most CLIs stall waiting for approval on the first edit or command. Add `Edit Write Bash` only when the task needs them.
-- **Auto-accept edits.** For edit-only, lower-risk tasks some CLIs offer a mode like Claude Code's `--permission-mode acceptEdits`. Shell commands still prompt under it, so don't use it for verification/build/test runs.
-- **Working directory.** Don't rely on cwd persisting across calls. Use absolute paths in the prompt, or pass the CLI's equivalent of `--add-dir /abs/path` to grant directory access.
-- **Reading the result.** By default the subagent's final message prints to stdout. To parse it, use a structured-output flag (Claude Code: `--output-format json`, read the `result` field).
-- **Background and parallel runs.** Redirect each job to its own log and collect them on completion:
+- **Always scope the tools.** This is what lets a run finish unattended — without it, most CLIs stall waiting for approval on the first edit. Add `Edit Write Bash` only when the task genuinely needs them.
+- **Auto-accepting edits.** For edit-only, lower-risk tasks, some CLIs offer a mode like Claude Code's `--permission-mode acceptEdits`. Shell commands still prompt under it, so it won't help for build or test runs.
+- **Working directory.** Don't assume the current directory carries across calls. Use absolute paths in the prompt, or pass the CLI's equivalent of `--add-dir /abs/path`.
+- **Reading the result.** By default the final message prints to stdout. To parse it instead, use a structured-output flag (Claude Code: `--output-format json`, then read the `result` field).
+- **Background and parallel runs.** Give each job its own log and collect them at the end. Worth doing for 2+ unrelated menial jobs:
 
   ```bash
   $AGENT_CMD -p "<task>" --allowedTools Read Glob Grep > /tmp/delegate-<label>.log 2>&1
   ```
 
-  Launch independent tasks as separate background runs — worth it for 2+ unrelated menial jobs.
+## Optional: stop the repeated permission prompts
 
-## Silence repeat permission prompts (optional)
-
-To stop per-call permission prompts on delegated runs, add a Bash allow rule for the specific command — via the `update-config` skill, or by editing settings directly:
+If Claude Code asks permission every time it calls your backend, add a Bash allow rule for that one command — through the `update-config` skill, or by editing settings directly:
 
 ```json
 { "permissions": { "allow": ["Bash(claude-cheap:*)"] } }
 ```
 
-Swap `claude-cheap` for whatever `AGENT_CMD` actually is. Scope the rule to that one command; don't broaden it to all of `Bash`.
+Swap `claude-cheap` for whatever `AGENT_CMD` actually is, and keep the rule scoped to that single command rather than widening it to all of `Bash`.
