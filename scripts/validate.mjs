@@ -109,18 +109,19 @@ for (const dir of skillDirs) {
   checkLinks(file, text);
 }
 
-// The README table is hand-maintained; make drift a build failure rather than
-// something a reader discovers.
+// The README's skill list is hand-maintained; make drift a build failure rather
+// than something a reader discovers. Any `[`name`](skills/…)` link counts —
+// table row or prose heading — so the README stays free to explain each skill.
 const readmePath = join(ROOT, "README.md");
 if (existsSync(readmePath)) {
   const readme = readFileSync(readmePath, "utf8");
   checkLinks(readmePath, readme);
 
-  const listed = [...readme.matchAll(/\|\s*\[`([^`]+)`\]\(skills\/[^)]+\)/g)].map((m) => m[1]).sort();
+  const listed = [...readme.matchAll(/\[`([^`\/]+)`\]\(skills\/\1\//g)].map((m) => m[1]).sort();
   const missing = skillDirs.filter((s) => !listed.includes(s));
   const extra = listed.filter((s) => !skillDirs.includes(s));
-  if (missing.length) fail(readmePath, `skills table is missing: ${missing.join(", ")}`);
-  if (extra.length) fail(readmePath, `skills table lists non-existent skills: ${extra.join(", ")}`);
+  if (missing.length) fail(readmePath, `README does not link these skills: ${missing.join(", ")}`);
+  if (extra.length) fail(readmePath, `README links non-existent skills: ${extra.join(", ")}`);
 }
 
 // Plugin manifests must parse and agree with each other.
