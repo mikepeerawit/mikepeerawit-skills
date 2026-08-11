@@ -47,10 +47,10 @@ Cost-first is the default — that's the point of the skill. Override it for the
 
 ### When a backend fails
 
-- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. Drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience.
+- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. If `AGENT_CMD` announced a fallback of its own, it already did this for you — don't re-run. Otherwise drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience.
 - **Task-level** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, split the task, or do it yourself.
 
-Tell the user when you fall back, and why. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
+Tell the user whenever a fallback happens, and why — whether you or `AGENT_CMD` performed it. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
 
 ## Make it safe to be wrong
 
@@ -64,6 +64,7 @@ The delegate has **zero** context from this conversation. A vague prompt is the 
 - **Absolute paths** for every input and output (`/Users/x/proj/src/foo.ts`, not `foo.ts`).
 - **Explicit inputs, outputs and acceptance criteria** — what to change, what "done" looks like.
 - **No references** to "the file we discussed", "above", or prior turns.
+- **Describe the work, not the exercise.** Wording a literal model reads as an instruction *about* the task — test framing, a marker string to echo back — displaces the task itself: it reasons about the exercise and writes nothing.
 - **A return contract** (below). Treat the delegate as a capable-but-literal junior.
 
 ### The return contract
@@ -95,6 +96,8 @@ You are the check on a cheaper, less reliable model — but don't pay full price
 3. **Spot-check one file** — the trickiest one, not all of them.
 
 Read the full output only when 1–3 disagree with the delegate's own report.
+
+**A zero exit is not an acceptance signal** — an agentic CLI exits 0 whenever the model completes a turn, including one that did nothing you asked.
 
 ## Mind the context window
 
