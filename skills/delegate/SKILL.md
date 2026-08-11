@@ -7,100 +7,110 @@ description: Delegate menial, well-scoped coding tasks to a cheaper subagent mod
 
 > Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills), generalized beyond its original Qwen-specific setup. Credit to 9arm for the underlying design.
 
-Offload **menial, self-contained** tasks to a cheaper model running headless, so the primary model's tokens/quota stay reserved for work that actually needs reasoning. Only delegate when the task is low-risk enough that a less capable model can be trusted with it.
+Offload **menial, self-contained** tasks to a cheaper model, so the primary model's tokens/quota stay reserved for work that actually needs reasoning.
 
 ## Workflow
 
-1. **Confirm the task is delegable** — menial and low-risk. If it needs design judgment or this chat's context, do it yourself (see [When NOT to delegate](#when-not-to-delegate)).
-2. **Pick the backend.** Confirm `AGENT_CMD` and `CONTEXT_WINDOW` are known for this project — if either is unknown, ask the user, never guess ([Configuration](#configuration)). Where more than one backend is configured, choose by [rank](#ranking-backends): cheapest first, unless someone is waiting on the result or the task needs a bigger context window.
-3. **Size it** — check the task fits the delegate's context window; split large jobs into bounded per-file/per-dir chunks.
-4. **Write a fully self-contained prompt** with absolute paths and acceptance criteria. This is the step that decides success.
-5. **Run it** — foreground for a single job, background-redirected for parallel jobs.
-6. **Verify the output yourself.** The delegate is cheaper and less reliable than you are. Check the result actually meets the acceptance criteria before reporting success.
+1. **Confirm it's delegable** — menial and low-risk. Needs design judgment or this chat's context? Do it yourself ([when NOT to](#when-not-to-delegate)).
+2. **Pick the backend** by [rank](#backends-ranked) — cheapest first, unless someone's waiting or the task needs a bigger window.
+3. **Size it** — it must fit that backend's [context window](#mind-the-context-window); split large jobs into bounded chunks.
+4. **[Make it safe to be wrong](#make-it-safe-to-be-wrong)** — commit or stash first, grant the narrowest tool set.
+5. **[Write a self-contained prompt](#writing-the-prompt-most-important-step)** — absolute paths, acceptance criteria, return contract. This step decides success.
+6. **[Verify cheaply](#verify-cheaply)** — check the work without re-reading it.
 
 ## When NOT to delegate
 
-Architecture/design, debugging that needs reasoning, security-sensitive changes, anything requiring this conversation's context, or tasks where a wrong cheap-model edit is costly to catch. When in doubt, keep it.
+Architecture/design, debugging that needs reasoning, security-sensitive changes, anything requiring this conversation's context, or tasks where a wrong cheap-model edit is costly to catch. If a job can't be sliced cleanly — it needs whole-codebase context to do correctly — that's also a sign. When in doubt, keep it.
 
-If a job is inherently too big to slice cleanly — it needs whole-codebase context to do correctly — that is also a sign it isn't a delegate task.
+## Backends, ranked
 
-## Configuration
+The real axis is **which quota you spend**, not raw price.
 
-This skill is model-agnostic by design. Two values must be resolved once per model you delegate to:
+| Rank | Backend | Setup | Spends |
+|---|---|---|---|
+| 0 | Native subagent — the subagent tool with a cheap model (e.g. `model: "haiku"`) | none | the same Anthropic quota you're protecting |
+| 1+ | `AGENT_CMD` — a headless agentic CLI on a cheaper backend | one-time, per model | that provider's credit, or nothing if it's free |
 
-- **`AGENT_CMD`** — the shell command that runs the target model headless with a prompt and can call tools unattended.
-- **`CONTEXT_WINDOW`** — that model's context window in tokens, used to size delegated tasks. Take this from what the harness actually reports at runtime, not the model card — they routinely disagree, and the model card is the optimistic one.
+Rank 0 always works and needs no config — **if no `AGENT_CMD` is configured, use rank 0 and say so.** Don't stop to ask a config question before doing menial work; that costs more than it saves. Shell out to rank 1+ only to move spend **off** your Anthropic quota, or to reach a model Anthropic doesn't serve.
 
-**If either is unknown, ask the user — never guess.** Once known for this project, treat them as fixed for the rest of the task. If this becomes a repeat pattern, note the command in a project `CLAUDE.md` so future sessions don't have to ask again.
+Keep configured backends as an ordered list, cheapest first, each carrying its `CONTEXT_WINDOW`, cost and typical latency. Take `CONTEXT_WINDOW` from what the harness reports at runtime, not the model card — they routinely disagree and the card is the optimistic one. **Never guess a configured backend's window:** guessing causes silent truncation, which is the failure you can't see.
 
-Setting `AGENT_CMD` up the first time — proxying Claude Code to a cheaper backend, using a different agentic CLI, smoke-testing it, and silencing repeat permission prompts — is covered in [`references/setup.md`](references/setup.md). Read that file only when `AGENT_CMD` does not yet exist or does not work.
+Setting `AGENT_CMD` up the first time is covered in [`references/setup.md`](references/setup.md). Read it only when `AGENT_CMD` doesn't exist or doesn't work.
 
-## Ranking backends
+### Choosing between them
 
-Projects often have more than one delegate backend — a free-but-slow one, a paid-but-fast one, a local one. Keep them as an **ordered list, cheapest first**, each carrying the facts needed to choose between them:
+Cost-first is the default — that's the point of the skill. Override it for the task in front of you:
 
-| Rank | `AGENT_CMD` | `CONTEXT_WINDOW` | Cost | Typical latency |
-|---|---|---|---|---|
-| 1 | `<cmd>` | 200k | free | ~3 min/task |
-| 2 | `<cmd>` | 200k | ~$0.01/task | ~2 min/task |
-
-Cost-first is the default because that is the point of the skill. **Override it for the task in front of you:**
-
-- **Someone is waiting on the result** → take the fastest backend that fits, not the cheapest. A 50% latency saving is worth a cent.
-- **Background, parallel, or batch work** → keep the default order. Nobody is watching the clock, so cost wins.
-- **Task needs more context than rank 1 offers** → drop to the first backend whose `CONTEXT_WINDOW` fits, rather than splitting the task into chunks that no longer make sense on their own.
+- **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent.
+- **Background, parallel or batch work** → keep the default order. Nobody's watching the clock.
+- **Needs more context than rank 1 offers** → drop to the first backend whose window fits, rather than splitting the task into chunks that no longer make sense on their own.
 
 ### When a backend fails
 
-**Distinguish a broken backend from a bad result** — they need opposite responses:
+- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. Drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience.
+- **Task-level** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, split the task, or do it yourself.
 
-- **Backend-level failure** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. Drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages last longer than your patience.
-- **Task-level failure** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, or split the task, or do it yourself.
+Tell the user when you fall back, and why. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
 
-Tell the user when you fall back, and say why. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
+## Make it safe to be wrong
 
-## Writing the task prompt (most important step)
+- **Commit or stash first** on any write task. Then `git diff` shows exactly what the delegate did, and `git checkout --` undoes it. A bad cheap-model edit mixed into your own uncommitted work has no clean revert.
+- **Grant the narrowest tool set the task needs.** Read-only jobs — search, summarize, condense a log — get read tools only: no `Bash`, no `Write`. Tool scoping is what lets a job finish unattended, but it's also the blast radius.
 
-The delegate model has **zero** context from this conversation. A vague prompt is the #1 failure mode. Every prompt must be standalone:
+## Writing the prompt (most important step)
 
-- **Absolute paths** for every input and output file (`/Users/x/proj/src/foo.ts`, not `foo.ts`).
-- **Explicit inputs, outputs, and acceptance criteria** — what to change, what "done" looks like.
+The delegate has **zero** context from this conversation. A vague prompt is the #1 failure mode.
+
+- **Absolute paths** for every input and output (`/Users/x/proj/src/foo.ts`, not `foo.ts`).
+- **Explicit inputs, outputs and acceptance criteria** — what to change, what "done" looks like.
 - **No references** to "the file we discussed", "above", or prior turns.
-- Treat the delegate as a capable-but-literal junior: spell out the steps, keep scope tight.
+- **A return contract** (below). Treat the delegate as a capable-but-literal junior.
 
-Bad: `clean up the imports`
-Good: `In /Users/x/proj/src/api.ts, remove unused imports and sort the remaining import statements alphabetically. Do not change any other code. Confirm the file still parses.`
+### The return contract
+
+The delegate's output lands in *your* context verbatim. If checking its work costs what doing it would have, you saved nothing — so make the output cheap to check. Put this in the prompt:
+
+> Write your results to `<abs-path>`. Reply with at most 5 lines: files touched, and PASS or FAIL for each acceptance criterion.
+
+### Worked example
+
+```
+In /Users/x/proj/src/api.ts, remove unused imports and sort the remaining
+import statements alphabetically. Change nothing else.
+Then run `npx tsc --noEmit` from /Users/x/proj.
+Done = the file still parses and tsc reports no new errors.
+Reply with at most 5 lines: the imports you removed, then PASS or FAIL for tsc.
+```
+
+Verify with `git diff --stat` (one file, imports only?) and `npx tsc --noEmit`. Neither re-reads the file.
+
+Bad: `clean up the imports` — no path, no criteria, no return contract.
+
+## Verify cheaply
+
+You are the check on a cheaper, less reliable model — but don't pay full price for it. In order:
+
+1. **Run the acceptance criterion** — the test, the build, the linter. Machine-checked beats read.
+2. **`git diff --stat`** — right files, plausible size? A 400-line diff for "sort imports" fails without reading a line of it.
+3. **Spot-check one file** — the trickiest one, not all of them.
+
+Read the full output only when 1–3 disagree with the delegate's own report.
 
 ## Mind the context window
 
-The delegate's context window (`CONTEXT_WINDOW`) is usually much smaller than the primary model's. The whole job — prompt + every file it reads + its own reasoning and edits — has to fit inside it:
+The whole job — prompt + every file it reads + its own reasoning and edits — has to fit inside the backend's window.
 
-- **Estimate the footprint** before delegating: roughly bytes of files it must read/open/write ÷ 4 ≈ tokens. If a single task would pull in large or many files, it won't fit.
-- **Break large jobs into independent chunks** that each touch a bounded slice — one file (or a few small ones) per run, one directory per run, one log segment per run. Run chunks as separate invocations.
-- **Don't make it read what it doesn't need.** Point it at exact files/paths; never tell it to "scan the repo."
-- **Watch for context-exhaustion symptoms** when verifying: truncated edits, ignored later instructions, or a summary that omits files it was told to touch. These usually mean the task overflowed — split smaller and retry.
+- **Estimate first:** bytes of the files it must touch ÷ 4 ≈ tokens.
+- **Chunk large jobs** into independent slices — one file (or a few small ones), one directory, or one log segment per run.
+- **Don't make it read what it doesn't need.** Exact paths; never "scan the repo."
+- **Exhaustion symptoms** when verifying: truncated edits, ignored later instructions, a summary omitting files it was told to touch. Split smaller and retry.
 
-## Running a delegated task
+## Running it
+
+Rank 0 needs nothing special — pass the same self-contained prompt to the subagent tool with a cheap model. For `AGENT_CMD`:
 
 ```bash
-$AGENT_CMD -p "<self-contained task prompt>" --allowedTools Bash Read Edit Write Glob Grep
+$AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep   # add Edit Write Bash only if the task needs them
 ```
 
-Adjust flags to whatever `$AGENT_CMD`'s CLI actually supports — the flags above match Claude Code-style CLIs; other tools use different flags for headless/non-interactive mode and tool scoping.
-
-- **Scope the tools explicitly.** This is what lets the subagent finish a menial job unattended — without it, most CLIs stall waiting for approval on the first edit or command.
-- For edit-only, lower-risk tasks, some CLIs support an auto-accept-edits mode (e.g. Claude Code's `--permission-mode acceptEdits`). Shell commands still prompt under that mode — don't use it for verification/build/test runs.
-
-**Working directory:** don't rely on cwd persisting across calls. Put absolute paths in the prompt, or pass whatever equivalent of `--add-dir /abs/path` the CLI supports to grant the subagent access to a directory.
-
-## Return contract
-
-- **Default (text):** the subagent's final message prints to stdout — read it directly.
-- **Need to parse the result:** use the CLI's structured-output flag if it has one (e.g. Claude Code's `--output-format json`, reading the `result` field).
-- **Background / parallel (run several at once):** redirect to a log and run in the background, then read the log when it finishes:
-
-  ```bash
-  $AGENT_CMD -p "<task>" --allowedTools Bash Read Edit Write Glob Grep > /tmp/delegate-<label>.log 2>&1
-  ```
-
-  Launch independent tasks as separate background runs; collect each log on completion. Use this when delegating 2+ unrelated menial jobs.
+Those flags are Claude Code's; other CLIs differ. Headless flags, tool scoping, working directory, structured output and background/parallel runs are all in [`references/setup.md`](references/setup.md).
