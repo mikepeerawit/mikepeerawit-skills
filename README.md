@@ -9,7 +9,7 @@ Via [`npx skills`](https://skills.sh/):
 ```bash
 npx skills add mikepeerawit/mikepeerawit-skills          # pick interactively
 npx skills add mikepeerawit/mikepeerawit-skills --all     # install everything
-npx skills add mikepeerawit/mikepeerawit-skills -s delegate-agent
+npx skills add mikepeerawit/mikepeerawit-skills -s delegate
 ```
 
 Or as a Claude Code plugin, from inside Claude Code:
@@ -23,8 +23,8 @@ Or as a Claude Code plugin, from inside Claude Code:
 
 | Skill | Description |
 |---|---|
-| [`delegate-agent`](skills/delegate-agent/SKILL.md) | Delegate menial, well-scoped coding tasks to a cheaper subagent model to reduce the primary model's token burn, saving its tokens/quota for work that needs real reasoning. |
-| [`stay-on-track`](skills/stay-on-track/SKILL.md) | Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, watches the context budget, and triggers a clean handoff before the window fills. |
+| [`delegate`](skills/delegate/SKILL.md) | Delegate menial, well-scoped coding tasks to a cheaper subagent model to reduce the primary model's token burn, saving its tokens/quota for work that needs real reasoning. |
+| [`focus`](skills/focus/SKILL.md) | Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, watches the context budget, and triggers a clean handoff before the window fills. |
 
 ## Development
 
@@ -45,7 +45,7 @@ Keep `SKILL.md` to the procedure. Anything a reader needs once — one-time setu
 
 ## Credits
 
-`delegate-agent` and `stay-on-track` are adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) and [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — `delegate-agent` generalizes the original beyond its Qwen-specific setup; `stay-on-track` is a rename of the original, which was already model-agnostic. All credit for the underlying design goes to 9arm.
+`delegate` and `focus` are adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) and [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — `delegate` generalizes the original beyond its Qwen-specific setup; `focus` is a rename of the original, which was already model-agnostic. All credit for the underlying design goes to 9arm.
 
 ## License
 

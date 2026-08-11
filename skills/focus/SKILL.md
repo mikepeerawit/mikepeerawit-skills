@@ -1,9 +1,9 @@
 ---
-name: stay-on-track
+name: focus
 description: Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, watches the context budget, bounds internal reasoning, and triggers a clean handoff before the window fills. Use when the model is repeating steps, re-reading the same files, second-guessing in circles, stuck or spinning, or running a long multi-step task at risk of exhausting context. Also use when the user says it is "looping", "going in circles", "stuck", "repeating itself", or asks for a handoff before running out of context.
 ---
 
-# Staying on Track
+# Focus
 
 > Adapted from [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — the original was already model-agnostic, so this is a rename plus a self-contained handoff procedure. Credit to 9arm for the underlying design.
 

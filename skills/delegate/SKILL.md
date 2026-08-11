@@ -1,9 +1,9 @@
 ---
-name: delegate-agent
+name: delegate
 description: Delegate menial, well-scoped coding tasks to a cheaper subagent model to reduce the primary model's token burn — save its tokens/quota for work that needs real reasoning. Use when the work is mechanical and low-risk — bulk renames, formatting, boilerplate, find-replace, grep-style search & summarization, reading/condensing logs or files, test/docstring/comment scaffolding, or running builds/linters/tests and reporting pass-fail. Also use when the user says "delegate this", "send it to a cheaper model", "use <model>", or "do this cheaply". Do NOT use for architecture, design, debugging judgment, security-sensitive edits, or anything needing this conversation's context.
 ---
 
-# delegate-agent
+# Delegate
 
 > Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills), generalized beyond its original Qwen-specific setup. Credit to 9arm for the underlying design.
 
