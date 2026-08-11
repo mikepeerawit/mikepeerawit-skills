@@ -91,14 +91,21 @@ Claude Code snapshots your environment when a session starts, so a profile chang
 
 ### Optional: several backends, cheapest first
 
-If you have more than one cheap backend, the same script can try them in order. Fall through **only** when a backend fails without producing output — that means it never really ran. If it printed something before dying it may already have edited files, and re-running the same prompt elsewhere risks doing the work twice.
+If you have more than one cheap backend, the same script can try them in order. Fall through **only** when the first backend never really ran. If it got far enough to edit files before dying, re-running the same prompt elsewhere does the work twice.
+
+The obvious test for that — "exited nonzero and printed nothing" — **does not work.** Claude Code prints API and auth errors to **stdout**, not stderr, and exits 1. A backend that is flatly refusing every request still produces output, so the obvious test never fires and the fallback silently becomes dead code. What actually identifies a dead backend is stdout holding an error message *and nothing else*:
 
 ```sh
 #!/bin/sh
 out=$(mktemp); trap 'rm -f "$out"' EXIT
 claude --settings "$HOME/.claude-free.json" --model=<free-model-id> "$@" >"$out"
 status=$?
-if [ $status -ne 0 ] && [ ! -s "$out" ]; then
+
+# Dead backend: nonzero exit, and stdout is an error message and nothing more.
+if [ $status -ne 0 ] &&
+   { [ ! -s "$out" ] || { [ "$(wc -c <"$out")" -le 2000 ] &&
+     grep -qiE 'API Error|Failed to authenticate|Connection error|fetch failed|ECONNREFUSED' "$out"; }; }
+then
   echo "free backend down — falling back to paid" >&2
   claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@" </dev/null
   exit $?
@@ -106,7 +113,12 @@ fi
 cat "$out"; exit $status
 ```
 
-Buffering the output is what lets the script tell "never started" from "died partway". Don't buffer *input* the same way — reading stdin to a file hangs forever when nothing is piped in.
+The size cap is the double-run guard: a run that did real work prints far more than an error line, so it fails the test and is returned as-is even though it also errored.
+
+Two things worth knowing if you adapt this:
+
+- **Test it against a genuinely broken backend, not a fake one.** A stub script that fails the way you *assume* the CLI fails will happily confirm a broken condition — that is exactly how the stdout-vs-stderr bug above survives review. Point the config at a model your key can't access and watch what really happens.
+- **Buffer output, never input.** Capturing stdout is what makes the test possible. Reading *stdin* into a file the same way hangs forever whenever nothing is piped in.
 
 ## Step 4 — Confirm the model can use tools
 
