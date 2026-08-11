@@ -12,7 +12,7 @@ Offload **menial, self-contained** tasks to a cheaper model running headless, so
 ## Workflow
 
 1. **Confirm the task is delegable** — menial and low-risk. If it needs design judgment or this chat's context, do it yourself (see [When NOT to delegate](#when-not-to-delegate)).
-2. **Confirm `AGENT_CMD` and `CONTEXT_WINDOW` are known** for this project. If either is unknown, ask the user — never guess. See [Configuration](#configuration).
+2. **Pick the backend.** Confirm `AGENT_CMD` and `CONTEXT_WINDOW` are known for this project — if either is unknown, ask the user, never guess ([Configuration](#configuration)). Where more than one backend is configured, choose by [rank](#ranking-backends): cheapest first, unless someone is waiting on the result or the task needs a bigger context window.
 3. **Size it** — check the task fits the delegate's context window; split large jobs into bounded per-file/per-dir chunks.
 4. **Write a fully self-contained prompt** with absolute paths and acceptance criteria. This is the step that decides success.
 5. **Run it** — foreground for a single job, background-redirected for parallel jobs.
@@ -29,11 +29,35 @@ If a job is inherently too big to slice cleanly — it needs whole-codebase cont
 This skill is model-agnostic by design. Two values must be resolved once per model you delegate to:
 
 - **`AGENT_CMD`** — the shell command that runs the target model headless with a prompt and can call tools unattended.
-- **`CONTEXT_WINDOW`** — that model's context window in tokens, used to size delegated tasks.
+- **`CONTEXT_WINDOW`** — that model's context window in tokens, used to size delegated tasks. Take this from what the harness actually reports at runtime, not the model card — they routinely disagree, and the model card is the optimistic one.
 
 **If either is unknown, ask the user — never guess.** Once known for this project, treat them as fixed for the rest of the task. If this becomes a repeat pattern, note the command in a project `CLAUDE.md` so future sessions don't have to ask again.
 
 Setting `AGENT_CMD` up the first time — proxying Claude Code to a cheaper backend, using a different agentic CLI, smoke-testing it, and silencing repeat permission prompts — is covered in [`references/setup.md`](references/setup.md). Read that file only when `AGENT_CMD` does not yet exist or does not work.
+
+## Ranking backends
+
+Projects often have more than one delegate backend — a free-but-slow one, a paid-but-fast one, a local one. Keep them as an **ordered list, cheapest first**, each carrying the facts needed to choose between them:
+
+| Rank | `AGENT_CMD` | `CONTEXT_WINDOW` | Cost | Typical latency |
+|---|---|---|---|---|
+| 1 | `<cmd>` | 200k | free | ~3 min/task |
+| 2 | `<cmd>` | 200k | ~$0.01/task | ~2 min/task |
+
+Cost-first is the default because that is the point of the skill. **Override it for the task in front of you:**
+
+- **Someone is waiting on the result** → take the fastest backend that fits, not the cheapest. A 50% latency saving is worth a cent.
+- **Background, parallel, or batch work** → keep the default order. Nobody is watching the clock, so cost wins.
+- **Task needs more context than rank 1 offers** → drop to the first backend whose `CONTEXT_WINDOW` fits, rather than splitting the task into chunks that no longer make sense on their own.
+
+### When a backend fails
+
+**Distinguish a broken backend from a bad result** — they need opposite responses:
+
+- **Backend-level failure** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. Drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages last longer than your patience.
+- **Task-level failure** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, or split the task, or do it yourself.
+
+Tell the user when you fall back, and say why. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
 
 ## Writing the task prompt (most important step)
 
