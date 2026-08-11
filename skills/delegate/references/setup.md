@@ -98,15 +98,16 @@ The obvious test for that — "exited nonzero and printed nothing" — **does no
 ```sh
 #!/bin/sh
 set -u
+
+# One function per backend, so each backend's invocation lives in exactly one
+# place no matter how many paths through the script end up calling it.
+run_free() { claude --settings "$HOME/.claude-free.json"  --model=<free-model-id>  "$@"; }
+run_paid() { claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"; }
+
 out=$(mktemp "${TMPDIR:-/tmp}/delegate-out.XXXXXX") || exit 1
 trap 'rm -f "$out"' EXIT
 trap 'rm -f "$out"; exit 130' INT    # must exit, not just clean up — see below
 trap 'rm -f "$out"; exit 143' TERM
-
-# One function per backend. Naming them keeps the invocation in a single place,
-# which is what makes the pinning block below a four-line addition.
-run_free() { claude --settings "$HOME/.claude-free.json"  --model=<free-model-id>  "$@"; }
-run_paid() { claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"; }
 
 # Errors Claude Code raises itself. Nearly all of them carry "API Error".
 sigs_cli='API Error|Failed to authenticate|Connection error|fetch failed|ECONNREFUSED'
@@ -150,7 +151,7 @@ Five things worth knowing if you adapt this:
 
 Ranking is cost-first, which is the wrong order when someone is sitting there waiting for the answer. A ranked wrapper always spends the free backend's latency before reaching the fast one, and the skill has no way to say *skip it this time* — the wrapper owns the choice, and the skill only ever sees the result.
 
-`DELEGATE_BACKEND` is the escape hatch. Set it to one of your own backend labels and the wrapper runs that backend, only that one. Slot this above the ranked path, after the `run_*` functions:
+`DELEGATE_BACKEND` is the escape hatch. Set it to one of your own backend labels and the wrapper runs that backend, only that one. Slot this straight after the `run_*` functions — **above** the `mktemp` and the traps, so a pinned run never creates a temp file it has no use for, and can't fail for a reason that has nothing to do with the backend you pinned:
 
 ```sh
 case "${DELEGATE_BACKEND:-}" in
@@ -164,13 +165,13 @@ case "${DELEGATE_BACKEND:-}" in
 esac
 ```
 
-The labels are yours to name — use whatever you'd actually type, usually the provider. Three rules are what make the variable worth honouring:
+The labels are yours to name — whatever you'd actually type. The provider is the obvious choice when your backends differ by provider; name them by tier, as here, when that's the thing you'd be choosing between.
 
-| Rule | Why |
-|---|---|
-| A pin **disables fallback** | Pinning says *I know which one I want*. A wrapper that pins and then silently falls through to the other backend has answered a different question than the one you asked. |
-| An unknown value **exits nonzero**, naming the valid ones | A typo has to fail loudly. Ignoring it runs the default backend — spending exactly the cost, or exactly the latency, you set the variable to avoid. |
-| Unset means **the ranked path, unchanged** | Cost-first stays the default. Nothing about the no-pin case changes, so a wrapper gains pinning without gaining a decision. |
+Three rules are what make the variable worth honouring:
+
+- **A pin disables fallback.** Pinning says *I know which one I want*. A wrapper that pins and then silently falls through to the other backend has answered a different question from the one you asked.
+- **An unknown value exits 2, naming the valid ones.** A typo has to fail loudly, or it runs the default backend — spending exactly the cost, or exactly the latency, you set the variable to avoid. Use 2 specifically: exit 1 is what a real backend failure looks like, and a caller can't tell your typo from a dead gateway.
+- **Unset means the ranked path, unchanged.** Cost-first stays the default. Nothing about the no-pin case moves, so a wrapper gains pinning without gaining a decision.
 
 **It's a convention, not a contract.** `AGENT_CMD` is an arbitrary user command, so nothing can oblige every wrapper to honour `DELEGATE_BACKEND` — a wrapper that ignores it is fully supported, and the skill never depends on it. That cuts both ways, which is why the skill must not set it on spec: an unimplemented variable is silently ignored, so a pin that did nothing is indistinguishable from a pin that worked.
 

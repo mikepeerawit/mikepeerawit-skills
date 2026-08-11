@@ -41,13 +41,13 @@ Setting `AGENT_CMD` up the first time is covered in [`references/setup.md`](refe
 
 Cost-first is the default — that's the point of the skill. Override it for the task in front of you:
 
-- **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent. When the backend is a wrapper that ranks internally, you get this only if it supports [pinning](references/setup.md#optional-pinning-one-backend) and the user has said so — never pin on the assumption it's honoured, because an ignored pin looks exactly like a successful one.
+- **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent. A wrapper that ranks internally tries the cheap backend first regardless, unless the user has already told you theirs supports [pinning](references/setup.md#optional-pinning-one-backend) — then prefer a pin over re-running. Otherwise take the default order rather than stopping to ask: an unhonoured pin is ignored in silence and reads exactly like a working one.
 - **Background, parallel or batch work** → keep the default order. Nobody's watching the clock.
 - **Needs more context than rank 1 offers** → drop to the first backend whose window fits, rather than splitting the task into chunks that no longer make sense on their own.
 
 ### When a backend fails
 
-- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. If `AGENT_CMD` announced a fallback of its own, it already did this for you — don't re-run. Otherwise drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience.
+- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. If `AGENT_CMD` announced a fallback of its own, it already did this for you — don't re-run. Otherwise drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience. A backend you pinned has no next one — that's what the pin bought; drop it deliberately and say so, or report the failure.
 - **Task-level** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, split the task, or do it yourself.
 
 Tell the user whenever a fallback happens, and why — whether you or `AGENT_CMD` performed it. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
