@@ -1,21 +1,22 @@
 ---
 name: focus
-description: Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, watches the context budget, bounds internal reasoning, and triggers a clean handoff before the window fills. Use when the model is repeating steps, re-reading the same files, second-guessing in circles, stuck or spinning, or running a long multi-step task at risk of exhausting context. Also use when the user says it is "looping", "going in circles", "stuck", "repeating itself", or asks for a handoff before running out of context.
+description: Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, catches drift from what was actually asked, bounds internal reasoning, and checkpoints work that compaction would otherwise lose. Use when the model is repeating steps, re-reading the same files, second-guessing in circles, wandering into work nobody asked for, quietly dropping part of the task, or running a long multi-step task at risk of exhausting context. Also use when the user says it is "looping", "going in circles", "stuck", "repeating itself", "off track", or asks for a handoff before running out of context.
 ---
 
 # Focus
 
 > Adapted from [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — the original was already model-agnostic, so this is a rename plus a self-contained handoff procedure. Credit to 9arm for the underlying design.
 
-Long, multi-step work fails three ways: **looping**, **over-thinking**, and **running out of context**. Run the checklist below **before each step**. When a trigger fires, do the matching action — don't deliberate about it.
+Long, multi-step work fails four ways: **looping**, **over-thinking**, **drifting off the ask**, and **losing what you learned**. Run the checklist below **before each step**. When a trigger fires, do the matching action — don't deliberate about it.
 
 ## Before each step — run this
 
 | Check | Trigger fires when... | Do this |
 |---|---|---|
-| **Looping?** | You're about to repeat an action (see signals below) | Break the loop — pick one fix below |
+| **Looping?** | You're about to repeat an action (signals in §1) | Break the loop — pick one fix in §1 |
 | **Over-thinking?** | You've reasoned past ~1000 words without acting | Stop. Act on your current best decision, or ask the user one question |
-| **Context tight?** | A low-context reminder appeared, **or** 2+ budget signals hold | Finish this step, then hand off |
+| **Still on the ask?** | You're about to do work the user didn't request, or you've dropped part of what they did | Restate the ask in one line; cut the extra or reinstate the missing part |
+| **Context tight?** | A low-context reminder appeared, **or** 2+ budget signals hold (§3) | Reminder → hand off (§4). Signals → checkpoint (§3) |
 
 If nothing fires, take the step.
 
@@ -51,38 +52,34 @@ Cap reasoning at **~1000 words per step**. Past that, you're deliberating instea
 - Can't decide in ~1000 words? The task is underspecified — **ask the user one sharp question**.
 - Don't restate the whole problem to yourself. Reference what you concluded; don't rebuild it.
 
-## 3. Context budget — count signals, don't estimate
+## 3. Context budget — checkpoint early, hand off only when told
 
-**Authoritative:** A `<system-reminder>` about low context / approaching auto-compaction. → **Hand off now** (section 4). Don't start new work.
+**Authoritative:** a `<system-reminder>` about low context or approaching auto-compaction. → **Hand off now** (§4). Don't start new work.
 
-**Otherwise, count how many of these are true right now:**
+**Nothing else triggers a handoff.** Compaction carries the work forward; a premature `/clear` throws away context you'd have kept for free. What compaction *does* drop is why you ruled things out — so context pressure triggers a **checkpoint**, not an exit.
+
+Count how many of these are true right now:
 
 - [ ] 20+ assistant turns into the task.
 - [ ] Read 5+ files, or any one huge file/log/dump.
 - [ ] Long tool outputs you keep scrolling back to.
 - [ ] 3+ plan steps still left.
 
-**Count the boxes that are true, then map the count to an action:**
+**0 or 1 → continue** working normally. **2+ → checkpoint:** land durable artifacts (save the file, commit, write the result), append to the **Ruled out** list (§4), then keep going. Count first, don't judge by feel.
 
-- **Count is 0 or 1 → CONTINUE** working normally.
-- **Count is 2, 3, or 4 → HAND OFF** — finish the current step, then go to section 4.
+Before an **expensive** step (large read, new subtask, long generation), checkpoint first if the count says so. If a delegate-style skill is installed here, offload large reads to it so the dump never enters this window — check that it exists first.
 
-Count first, then decide — don't judge by feel. A higher count means *more* context pressure, not less. Being on the last step or "almost done" does **not** lower the count or cancel a HAND OFF.
+## 4. The handoff note
 
-Before any **expensive** step (large read, new subtask, long generation), ask: *"Room to finish this AND hand off after?"* If the count says HAND OFF, finish the current atomic unit, then hand off — don't start the next.
+Compaction summarizes what happened; it does **not** preserve why you ruled things out. That's what the note is for — so write it as you go, not once at the end.
 
-## 4. Hand off cleanly
+- **Goal** — the task, in one sentence.
+- **Done** — what has landed: files changed, commands that worked, decisions already made.
+- **Next** — the immediate next step, concrete enough to act on without re-deriving it.
+- **Ruled out** — dead ends already tried, and why. The part nothing else preserves.
 
-When context is tight or the user asks:
+Keep it in a file (`HANDOFF.md` or a scratch file) and update it at each checkpoint — chat scrollback doesn't survive compaction either.
 
-1. **Land durable artifacts first.** Save the file, commit, write the result. A handoff that loses work is not a handoff.
-2. **Write the handoff note** — everything the next session needs, and nothing else:
-   - **Goal** — the task, in one sentence.
-   - **Done** — what has landed: files changed, commands that worked, decisions already made.
-   - **Next** — the immediate next step, concrete enough to act on without re-deriving it.
-   - **Ruled out** — dead ends already tried, so the next session doesn't repeat them. This is the part that is lost if you skip it.
+**On the authoritative low-context reminder:** land durable artifacts, finish the note, then tell the user plainly — *"Context is getting tight. I've landed X and written the handoff to Y. Start a fresh session with `/clear`."* You cannot clear or compact the context yourself; the user runs `/clear` (fresh start) or `/compact` (summarize in place).
 
-   Put the note in the chat. If the work spans sessions, also write it to a file (`HANDOFF.md` or a scratch file) — chat scrollback is not durable.
-3. **Tell the user plainly:** "Context is getting tight — I've landed X and written a handoff. Start a fresh session with `/clear`." You cannot clear or compact the context yourself; the user runs `/clear` (fresh start) or `/compact` (summarize in place).
-
-If a handoff or compaction skill is installed in this environment, use it for step 2 instead of hand-writing the note — but check that it exists first. Never call a skill by name on the assumption it's available.
+If a handoff or compaction skill is installed in this environment, use it to write the note — but check that it exists first. Never call a skill by name on the assumption it's available.

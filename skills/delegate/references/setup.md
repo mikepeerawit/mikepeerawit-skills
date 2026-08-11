@@ -4,6 +4,8 @@ One-time setup, per model you want to delegate to. Read this only when `AGENT_CM
 
 `AGENT_CMD` must be an *agentic* CLI running headless — it takes a prompt and can call tools (Bash/Read/Edit/…) without a human clicking through permission prompts. A raw chat CLI (`ollama run`, a bare chatbot REPL) is **not** enough by itself; it has no tool-calling loop.
 
+**Data egress:** any backend other than Anthropic's own means the code you delegate leaves Anthropic's boundary and lands under that provider's retention and training policy. Pick backends accordingly, and don't delegate on code you can't send there.
+
 Two ways to get there.
 
 ## A. Point Claude Code itself at a cheaper backend
@@ -98,6 +100,26 @@ $AGENT_CMD -p "create a file at <abs-path>/smoketest.txt containing OK" --allowe
 ```
 
 Use a scratch path you're happy to delete. Then check the file exists — not that the model *said* it created it. If it hangs, the headless/tool-scoping flags are wrong. If it replies describing the file without writing one, the model isn't calling tools properly; pick a different model. Fix either before trying to delegate real work.
+
+## Invocation mechanics
+
+Once `AGENT_CMD` works, these are the flags a delegated run needs. The syntax below is Claude Code's; other CLIs have their own equivalents — check their docs.
+
+```bash
+$AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep
+```
+
+- **Scope the tools explicitly.** This is what lets a subagent finish unattended — without it most CLIs stall waiting for approval on the first edit or command. Add `Edit Write Bash` only when the task needs them.
+- **Auto-accept edits.** For edit-only, lower-risk tasks some CLIs offer a mode like Claude Code's `--permission-mode acceptEdits`. Shell commands still prompt under it, so don't use it for verification/build/test runs.
+- **Working directory.** Don't rely on cwd persisting across calls. Use absolute paths in the prompt, or pass the CLI's equivalent of `--add-dir /abs/path` to grant directory access.
+- **Reading the result.** By default the subagent's final message prints to stdout. To parse it, use a structured-output flag (Claude Code: `--output-format json`, read the `result` field).
+- **Background and parallel runs.** Redirect each job to its own log and collect them on completion:
+
+  ```bash
+  $AGENT_CMD -p "<task>" --allowedTools Read Glob Grep > /tmp/delegate-<label>.log 2>&1
+  ```
+
+  Launch independent tasks as separate background runs — worth it for 2+ unrelated menial jobs.
 
 ## Silence repeat permission prompts (optional)
 

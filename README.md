@@ -24,7 +24,7 @@ Or as a Claude Code plugin, from inside Claude Code:
 | Skill | Description |
 |---|---|
 | [`delegate`](skills/delegate/SKILL.md) | Delegate menial, well-scoped coding tasks to a cheaper subagent model to reduce the primary model's token burn, saving its tokens/quota for work that needs real reasoning. |
-| [`focus`](skills/focus/SKILL.md) | Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, watches the context budget, and triggers a clean handoff before the window fills. |
+| [`focus`](skills/focus/SKILL.md) | Keeps a long Claude Code task on-track — breaks out of looping/circular thinking, catches drift from what was actually asked, and checkpoints work that compaction would otherwise lose. |
 
 ## Development
 
