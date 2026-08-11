@@ -97,28 +97,49 @@ The obvious test for that — "exited nonzero and printed nothing" — **does no
 
 ```sh
 #!/bin/sh
-out=$(mktemp); trap 'rm -f "$out"' EXIT
-claude --settings "$HOME/.claude-free.json" --model=<free-model-id> "$@" >"$out"
-status=$?
+set -u
+out=$(mktemp "${TMPDIR:-/tmp}/delegate-out.XXXXXX") || exit 1
+trap 'rm -f "$out"' EXIT
+trap 'rm -f "$out"; exit 130' INT    # must exit, not just clean up — see below
+trap 'rm -f "$out"; exit 143' TERM
+
+# Errors Claude Code raises itself. Nearly all of them carry "API Error".
+sigs_cli='API Error|Failed to authenticate|Connection error|fetch failed|ECONNREFUSED'
+# Bare upstream errors a translating proxy passes through verbatim (route A2).
+# On a route-A1 setup you can drop this half.
+sigs_upstream='ETIMEDOUT|Internal server error|Bad gateway|Service Unavailable'
 
 # Dead backend: nonzero exit, and stdout is an error message and nothing more.
-if [ $status -ne 0 ] &&
-   { [ ! -s "$out" ] || { [ "$(wc -c <"$out")" -le 2000 ] &&
-     grep -qiE 'API Error|Failed to authenticate|Connection error|fetch failed|ECONNREFUSED' "$out"; }; }
-then
-  echo "free backend down — falling back to paid" >&2
+backend_failed() {
+  [ "$1" -eq 0 ] && return 1                       # succeeded — nothing to fall back from
+  [ ! -s "$out" ] && return 0                      # died silently
+  [ "$(wc -c <"$out")" -gt 2000 ] && return 1      # too much output to be error-only
+  grep -qiE "$sigs_cli|$sigs_upstream" "$out"
+}
+
+claude --settings "$HOME/.claude-free.json" --model=<free-model-id> "$@" >"$out"
+rc=$?   # not `status` — that name is read-only in zsh, which bites when you debug this by hand
+
+if backend_failed "$rc"; then
+  echo "free backend down (exit $rc) — falling back to paid" >&2
+  sed 's/^/  free: /' "$out" >&2
   claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@" </dev/null
   exit $?
 fi
-cat "$out"; exit $status
+cat "$out"; exit $rc
 ```
 
 The size cap is the double-run guard: a run that did real work prints far more than an error line, so it fails the test and is returned as-is even though it also errored.
 
-Two things worth knowing if you adapt this:
+Five things worth knowing if you adapt this:
 
+- **A signal trap must `exit`, or Ctrl-C buys you a paid run.** This one is worth dwelling on, because the failure is silent and it costs money. Trapping `INT` replaces its default "terminate" behaviour, so a handler that only cleans up lets the script *continue* after you interrupt it: the free backend's exit code reads as a failure, its captured output has just been deleted by that very handler, `backend_failed` therefore concludes "died silently" — and the wrapper dutifully bills the paid backend for a run you cancelled. Hence the explicit `exit 130` / `exit 143`. If you'd rather not think about it, trapping `EXIT` alone is also correct: the default signal behaviour terminates the script and the `EXIT` trap still cleans up.
+- **Cover bare upstream errors, not just Claude Code's own.** Roughly every failure Claude Code raises itself is prefixed `API Error`, so that one string carries most of the list. The rest earn their place on **route A2**: a translating proxy hands back the upstream's error body verbatim, and `502 Bad Gateway` or a bare `ETIMEDOUT` arrives with no `API Error` anywhere in it. Drop those signatures and the fallback stops firing for exactly the flaky-gateway case it exists for.
+- **Echo the dead backend's output before falling back.** Buffering stdout is what makes detection possible, but it also means that on the fallback path the error text is sitting in a temp file that's about to be deleted — printing only "falling back" leaves you unable to tell a 401 from an outage. The `sed` line re-emits it on stderr, tagged, so the reason survives.
 - **Test it against a genuinely broken backend, not a fake one.** A stub script that fails the way you *assume* the CLI fails will happily confirm a broken condition — that is exactly how the stdout-vs-stderr bug above survives review. Point the config at a model your key can't access and watch what really happens.
-- **Buffer output, never input.** Capturing stdout is what makes the test possible. Reading *stdin* into a file the same way hangs forever whenever nothing is piped in.
+- **Buffer output, never input.** Capturing stdout is what makes the test possible. Reading *stdin* into a file the same way hangs forever whenever nothing is piped in. Note the `</dev/null` on the fallback call: a *piped* prompt has already been consumed by the first backend, so the second would otherwise hang waiting on a stdin that will never arrive.
+
+**Keep the announcement.** Whatever wording you use, a wrapper that ranks backends must print *something* to stderr when it falls through. The skill's [own fallback procedure](../SKILL.md) branches on it: it's how the model knows the fallback has already happened and it must not re-run the prompt on the next backend itself.
 
 ## Step 4 — Confirm the model can use tools
 
