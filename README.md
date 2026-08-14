@@ -20,7 +20,9 @@ There's a second benefit that's easy to miss, and it's often the bigger one: the
 
 It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, work that depends on a decision you made earlier in the conversation — those stay with the main model. It also won't bother for small jobs, where writing the instructions and checking the result costs more than just doing the work.
 
-**Cost to get started: nothing.** With no setup at all it hands the work to a cheap Claude subagent — that keeps the grunt work out of your main session's context window, and a cheap model burns fewer tokens than your main one would, but it's still your Anthropic quota paying. To move the spend off Anthropic entirely, point it at an outside provider once ([`references/setup.md`](skills/delegate/references/setup.md)); after that it always prefers that provider, and only falls back to the Claude subagent if the provider is down.
+**Setup is required — one time, before it can do anything.** You point it at an outside provider by setting `AGENT_CMD` ([`references/setup.md`](skills/delegate/references/setup.md) walks through it); from then on that's where delegated work goes, and your Anthropic quota stops paying for it.
+
+There's deliberately no zero-setup fallback. An earlier version handed the work to a cheap Claude subagent when nothing was configured, which kept the bulk out of your context window but still billed the quota the skill exists to protect — and in practice it got picked *over* a configured provider, because a subagent is a tool sitting in front of the model while `AGENT_CMD` is an environment variable it has to go looking for. Removing the option removed the bug ([ADR-0001](docs/adr/0001-delegate-requires-a-configured-backend.md)). Without a backend the skill now says so and does the work inline, rather than quietly costing you money.
 
 ### `focus` — keep a long task from going off the rails
 
@@ -58,6 +60,15 @@ node scripts/validate.mjs
 ```
 
 It verifies every skill has well-formed frontmatter, a `name` matching its directory, a description inside Claude Code's 1024-character limit, and working relative links — plus that the skill list above matches what's actually in `skills/`. CI runs the same thing on every push and PR.
+
+There's also a manual end-to-end check for `delegate`:
+
+```bash
+scripts/delegate-e2e.sh --preflight   # resolves AGENT_CMD, no backend call, free
+scripts/delegate-e2e.sh               # real delegated task against your backend
+```
+
+It's kept out of `validate.mjs` on purpose — it needs a configured `AGENT_CMD` and that provider's credentials, so CI can't run it and shouldn't try.
 
 Layout:
 

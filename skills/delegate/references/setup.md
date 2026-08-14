@@ -4,9 +4,9 @@ One-time setup, once per model you want to delegate to. Read this only when `AGE
 
 ## Do you actually need this?
 
-**No** — if you only want the grunt work kept out of your main session's context window. The skill's rank 0 (a cheap Claude subagent) needs no setup, no key, no config, and works right now. It still bills your Anthropic quota, though.
+**Yes.** `AGENT_CMD` is what the skill delegates *to* — without one it has nowhere to send work, so it announces that and does the job inline instead.
 
-**Yes** — if you want delegated work billed to *someone other than Anthropic*, or you need a model Anthropic doesn't serve. Set one up and the skill prefers it over rank 0 from then on, every time.
+There used to be a zero-setup fallback (a cheap Claude subagent). It was removed: it billed the Anthropic quota the skill exists to protect, and because a subagent is a tool the model can see while `AGENT_CMD` is a variable it has to look up, it got chosen *over* configured backends. See [ADR-0001](../../../docs/adr/0001-delegate-requires-a-configured-backend.md).
 
 ## What you're building
 

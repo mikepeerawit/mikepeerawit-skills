@@ -9,8 +9,10 @@ description: Route work that would dump a lot of tokens into this conversation t
 
 Offload **bulky, self-contained** work to a cheaper model. Two things stay protected, and they're worth naming separately:
 
-- **Quota** — the primary model's budget, spent on reasoning instead of grunt work. Only a configured [`AGENT_CMD`](#backends-ranked) moves that spend off your Anthropic quota *entirely*; the rank-0 fallback still reduces it, since a cheap model burns far fewer tokens on the same grunt work than the primary would inline.
-- **Context window** — the delegate's output never enters *this* conversation. Every backend delivers this, and it's usually the one that matters: long sessions die of context exhaustion far more often than of quota.
+- **Quota** — the primary model's budget, spent on reasoning instead of grunt work.
+- **Context window** — the delegate's output never enters *this* conversation. Usually the one that matters: long sessions die of context exhaustion far more often than of quota.
+
+Both require a configured [`AGENT_CMD`](#the-backend). Without one this skill has nothing to offload *to* — see [no backend available](#no-backend-available).
 
 ## Is it worth delegating?
 
@@ -22,10 +24,24 @@ Above the bar, delegate. The payoff scales with how much output would otherwise 
 
 Size is a measurement, not a judgment call — estimate it (bytes ÷ 4 ≈ tokens) rather than deliberating.
 
+### Delegate jobs, not steps
+
+The cost of delegating is roughly **fixed**: one self-contained prompt to write, one result to verify. That cost doesn't shrink when the job does — so the smaller the unit you hand over, the worse the trade. Handing over five steps separately pays that cost five times; handing over the job they add up to pays it once.
+
+So before you delegate a step, look at what it's part of. If the next three things you were going to do are all delegable and all belong to the same job, send the **job**: "migrate every call site in `/abs/path/src` off the old API, then run the suite" beats three separate renames with a verification round between each.
+
+The limits are the [context window](#mind-the-context-window) — the whole job must fit — and self-containment: a job you can't describe without referring back to this conversation isn't one job, it's [work you should keep](#when-not-to-delegate).
+
 ## Workflow
 
 1. **Catch it before you act** — the trigger is the moment *before* a large read, a repo-wide search, a bulk mechanical edit, or a suite run you only need pass-fail from. Check the [threshold](#is-it-worth-delegating), then that it's [not on the keep-it list](#when-not-to-delegate).
-2. **Pick the backend** by [rank](#backends-ranked) — a configured `AGENT_CMD` always beats rank 0; among configured ones, cheapest first unless someone's waiting or the task needs a bigger window.
+2. **Find the backend — run the command, don't assume the answer:**
+
+   ```bash
+   printenv AGENT_CMD
+   ```
+
+   Non-empty → that is what you delegate to. Empty → [no backend available](#no-backend-available). Never conclude a backend is absent without running this.
 3. **Size it** — it must fit that backend's [context window](#mind-the-context-window); split large jobs into bounded chunks.
 4. **[Make it safe to be wrong](#make-it-safe-to-be-wrong)** — commit or stash first, grant the narrowest tool set.
 5. **[Write a self-contained prompt](#writing-the-prompt-most-important-step)** — absolute paths, acceptance criteria, return contract. This step decides success.
@@ -39,43 +55,34 @@ Read that third item narrowly. *Every* task you meet is happening inside a conve
 
 In doubt about **judgment**, keep it. In doubt about **size**, the [threshold](#is-it-worth-delegating) decides — don't relitigate a measurement as a judgment call.
 
-## Backends, ranked
+## The backend
 
-The real axis is **which quota you spend**, not raw price.
+Delegation goes to **`AGENT_CMD`** — a headless agentic CLI on a cheaper backend, spending that provider's credit rather than your Anthropic quota. It is a hard prerequisite: there is no built-in fallback, because the obvious candidate (a cheap Claude subagent) bills the very quota this skill exists to protect.
 
-| Rank | Backend | Setup | Spends | Use when |
-|---|---|---|---|---|
-| 1+ | `AGENT_CMD` — a headless agentic CLI on a cheaper backend | one-time, per model | that provider's credit, or nothing if it's free | **whenever one is configured** |
-| 0 | Native subagent — the subagent tool with a cheap model (e.g. `model: "haiku"`) | none | the same Anthropic quota you're protecting | fallback only |
+**You do not rank backends — `AGENT_CMD` does.** If its owner configured several, the wrapper tries them cheapest-first and handles its own fallback. Your job is to run the one command and read what comes back.
 
-**If an `AGENT_CMD` backend is configured, use it. Never pick rank 0 over a configured backend that can do the job** — rank 0 bills the very quota this skill exists to protect, so choosing it while a cheaper backend sits configured defeats the point. Check for `AGENT_CMD` before you decide; don't assume it's absent.
+```bash
+$AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep
+```
 
-Rank 0 is the fallback, for three cases and no others:
+Sizing is still yours: the job must fit the backend's [context window](#mind-the-context-window). Take that figure from what the harness reports at runtime, not the model card — they routinely disagree and the card is the optimistic one. **Never guess it**; guessing causes silent truncation, the failure you can't see.
 
-1. **Nothing is configured.** Use rank 0 and say so — don't stop to ask a config question before doing menial work, that costs more than it saves.
-2. **Every configured backend is down.** See [when a backend fails](#when-a-backend-fails).
-3. **No configured backend's window fits the job**, and the job can't be [chunked](#mind-the-context-window) without the pieces stopping making sense. Cost never justifies silent truncation — a cheap backend that quietly drops half your log costs more to recover from than the tokens it saved. Same rule if you need a model Anthropic serves and your backends don't.
+Setting `AGENT_CMD` up is covered in [`references/setup.md`](references/setup.md). Read it only when `AGENT_CMD` doesn't exist or doesn't work.
 
-Never cost, convenience or speed. Rank 0 still keeps the job's token dump out of *this* conversation's window, which is worth having on its own; it just isn't the full saving the skill advertises.
+### No backend available
 
-Keep configured backends as an ordered list, cheapest first, each carrying its `CONTEXT_WINDOW`, cost and typical latency. Take `CONTEXT_WINDOW` from what the harness reports at runtime, not the model card — they routinely disagree and the card is the optimistic one. **Never guess a configured backend's window:** guessing causes silent truncation, which is the failure you can't see.
+Two ways to get here: `printenv AGENT_CMD` came back empty, or every backend behind it is down. Both get the same response — **do the work inline, and say so in one line**:
 
-Setting `AGENT_CMD` up the first time is covered in [`references/setup.md`](references/setup.md). Read it only when `AGENT_CMD` doesn't exist or doesn't work.
+> No delegate backend available — doing this inline, so its output lands in this window.
 
-### Choosing between them
-
-This is about ordering the **configured** backends among themselves. Rank 0 enters only on one of its three cases above — never as a cheaper-feeling alternative. Cost-first is the default; override it for the task in front of you:
-
-- **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent. A wrapper that ranks internally tries the cheap backend first regardless, unless the user has already told you theirs supports [pinning](references/setup.md#optional-pinning-one-backend) — then prefer a pin over re-running. Otherwise take the default order rather than stopping to ask: an unhonoured pin is ignored in silence and reads exactly like a working one.
-- **Background, parallel or batch work** → keep the default order. Nobody's watching the clock.
-- **Needs more context than rank 1 offers** → drop to the first backend whose window fits, rather than splitting the task into chunks that no longer make sense on their own. If no configured window fits, that's rank-0 case 3 — take it rather than truncating.
+Don't do it silently: a missing backend that nobody mentions stays missing, and the skill degrades into contributing nothing while appearing to work. Don't stop to ask, either — a config question costs more than the menial work it interrupts. Announce, proceed, move on.
 
 ### When a backend fails
 
-- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. If `AGENT_CMD` announced a fallback of its own, it already did this for you — don't re-run. Otherwise drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience. A backend you pinned has no next one — that's what the pin bought; drop it deliberately and say so, or report the failure. Only once **every** configured backend is exhausted does rank 0 come into play, and it puts the spend back on the quota you were protecting — so say that out loud rather than falling into it quietly.
-- **Task-level** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, split the task, or do it yourself.
+- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran, so re-running the same prompt is safe. If `AGENT_CMD` announced a fallback of its own on stderr, **it already did this for you — don't re-run it yourself.** If it exhausted its backends, or has only one, that's [no backend available](#no-backend-available).
+- **Task-level** (it ran, but the output is wrong, truncated, or ignored instructions): re-running gains nothing — a cheaper model won't do better on the second try. Fix the prompt, split the job, or do it yourself.
 
-Tell the user whenever a fallback happens, and why — whether you or `AGENT_CMD` performed it. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
+Tell the user whenever a fallback happened, and why — whether you or `AGENT_CMD` performed it. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
 
 ## Make it safe to be wrong
 
@@ -145,12 +152,8 @@ The whole job — prompt + every file it reads + its own reasoning and edits —
 
 ## Running it
 
-On a configured backend:
-
 ```bash
 $AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep   # add Edit Write Bash only if the task needs them
 ```
-
-On the rank-0 fallback, pass that same self-contained prompt to the subagent tool with a cheap model instead — nothing else changes.
 
 Those flags are Claude Code's; other CLIs differ. Headless flags, tool scoping, working directory, structured output and background/parallel runs are all in [`references/setup.md`](references/setup.md).
