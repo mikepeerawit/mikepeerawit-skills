@@ -5,61 +5,48 @@ description: Route work that would dump a lot of tokens into this conversation t
 
 # Delegate
 
-Offload **bulky, self-contained** work to a cheaper model, so its output never enters this conversation. Requires a configured [`AGENT_CMD`](#the-backend).
-
-Reasoning, worked examples and post-mortems: [`references/playbook.md`](references/playbook.md). Setup: [`references/setup.md`](references/setup.md). Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills) by 9arm.
+Offload **bulky, self-contained** work to a cheaper model, so its output never enters this conversation. Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills) by 9arm.
 
 ## Is it worth delegating?
 
-Delegate once the job clears **either** bar: **>2k tokens** into this context, **or** **>5 files**. Under *both*, do it yourself. Size is a measurement — estimate it (bytes ÷ 4 ≈ tokens) rather than deliberating.
+Delegate once the job clears **either** bar: **>2k tokens** into this context, **or** **>5 files**. Under *both*, do it yourself — writing a standalone prompt and checking the result costs more than a small job does. Estimate the size (bytes ÷ 4 ≈ tokens); don't deliberate about it.
 
-**Delegate jobs, not steps.** Prompt-and-verify is a fixed cost, so five steps sent separately pay it five times. Send the job they add up to, bounded by the [context window](#mind-the-context-window) and by whether you can describe it without referring back to this conversation.
+**Delegate jobs, not steps.** Prompt-and-verify is a fixed cost, so five steps sent separately pay it five times. Send the whole job they add up to.
 
-## Workflow
+## The backends
 
-1. **Catch it before you act** — the moment *before* a large read, repo-wide search, bulk mechanical edit, or a suite run you need pass-fail from. Check the [threshold](#is-it-worth-delegating), then the [keep-it list](#when-not-to-delegate).
-2. **Find the backend — run the command, don't assume the answer:**
-
-   ```bash
-   printenv AGENT_CMD
-   ```
-
-   Non-empty → delegate to that. Empty → [no backend](#no-backend-available). Never conclude a backend is absent without running this.
-3. **Size it** — the whole job must fit that backend's [window](#mind-the-context-window).
-4. **Make it safe** — commit or stash first, so `git diff` shows what the delegate did and `git checkout --` undoes it. Grant the narrowest tool set: read-only jobs get no `Bash`, no `Write`.
-5. **[Write a self-contained prompt](#writing-the-prompt)** — this step decides success.
-6. **[Verify cheaply](#verify-cheaply)**.
-
-## When NOT to delegate
-
-Architecture/design, debugging that needs reasoning, security-sensitive changes, work depending on **decisions made earlier in this conversation**, jobs where a wrong cheap-model edit is costly to catch, or one that can't be sliced without whole-codebase context.
-
-Read that third item [narrowly](references/playbook.md#reading-conversation-context-narrowly) — what disqualifies a job is depending on something the prompt *can't restate*. In doubt about **judgment**, keep it; about **size**, the threshold decides.
-
-## The backend
-
-**`AGENT_CMD`** — a headless agentic CLI on a cheaper backend. A hard prerequisite: [there is no built-in fallback](references/playbook.md#why-theres-no-fallback).
+A `;`-separated list of shell commands, **cheapest first**. Run the command — never assume the list is empty:
 
 ```bash
-$AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep   # add Edit Write Bash only if needed
+printenv DELEGATE_BACKENDS      # e.g. claude-9arm;claude-openrouter
 ```
 
-**You do not rank backends — `AGENT_CMD` does.** If its owner configured several, the wrapper tries them cheapest-first and handles its own fallback. Run the one command and read what comes back. Those flags are Claude Code's; other CLIs differ.
+Empty or unset → [no backend](#no-backend). Otherwise take the first entry:
 
-### No backend available
+```bash
+claude-9arm -p "<self-contained prompt>" --allowedTools Read Glob Grep
+```
 
-`printenv AGENT_CMD` empty, or every backend behind it down. Both get the same response — **do the work inline and [say so](references/playbook.md#why-a-missing-backend-gets-announced) in one line**:
+Add `Edit Write Bash` only when the job must change files or run commands — a read-only job gets read-only tools. Without `--allowedTools` at all, the run stalls on the first approval prompt. Those flags are Claude Code's; other CLIs differ.
+
+## When a backend doesn't answer
+
+Two kinds of failure, two responses:
+
+- **Backend-level** — connection refused, 5xx, timeout, auth rejected, or it exits having printed nothing but an error. The model never ran, so nothing is half-done: **re-run the same prompt against the next entry in the list.** Claude Code prints API errors to *stdout* and exits 1, so judge by the text, not the exit code.
+- **Task-level** — it ran, but the output is wrong, truncated, or ignored instructions. A second backend won't do better on the same bad prompt. Fix the prompt, split the job, or do it yourself.
+
+**Check `git status` before falling through.** If the first backend got far enough to edit files before dying, the next one re-applies those edits — that case is task-level, not backend-level.
+
+Work down the list until one answers. Whenever the backend that ran wasn't the first, say so in one line and name it.
+
+### No backend
+
+`DELEGATE_BACKENDS` unset, or every entry failed at backend level. Both get the same response — **do the work inline and say so**:
 
 > No delegate backend available — doing this inline, so its output lands in this window.
 
-Never silently, and never stop to ask.
-
-### When a backend fails
-
-- **Backend-level** (connection refused, 5xx, timeout, auth rejected): the model never ran, so re-running is safe. If `AGENT_CMD` announced a fallback on stderr it already did this — [don't re-run it yourself](references/playbook.md#why-you-dont-re-run-after-a-wrapper-falls-back). If it exhausted its backends, that's [no backend](#no-backend-available).
-- **Task-level** (it ran; output wrong, truncated, or ignored instructions): re-running gains nothing. Fix the prompt, split the job, or do it yourself.
-
-Tell the user whenever a fallback happened, and why.
+Never silently, and never stop to ask. There is deliberately no built-in fallback to a Claude subagent: it would keep the bulk out of the window but still bill the quota this skill exists to protect.
 
 ## Writing the prompt
 
@@ -68,25 +55,61 @@ The delegate has **zero** context from this conversation. A vague prompt is the 
 - **Absolute paths** for every input and output (`/Users/x/proj/src/foo.ts`, not `foo.ts`).
 - **Explicit inputs, outputs and acceptance criteria** — what to change, what "done" looks like.
 - **No references** to "the file we discussed", "above", or prior turns.
-- **Describe the work, not the exercise** — never mention that you're testing it.
-- **A return contract**, so the output is cheap to check:
+- **A return contract**, so the result is cheap to check:
 
   > Write your results to `<abs-path>`. Reply with at most 5 lines: files touched, and PASS or FAIL for each acceptance criterion.
 
-[Worked example, with the mistakes it avoids](references/playbook.md#worked-example).
+Bad: `clean up the imports`
+Good: `In /Users/x/proj/src/api.ts, remove unused imports and sort the rest alphabetically. Change nothing else. Confirm the file still parses.`
 
 ## Verify cheaply
 
-You are the check on a cheaper, less reliable model — but don't pay full price for it. In order:
+You are the check on a less reliable model — but don't pay full price for it. In order:
 
 1. **Run the acceptance criterion** — test, build, linter. Machine-checked beats read.
 2. **`git diff --stat`** — right files, plausible size?
 3. **Spot-check one file** — the trickiest, not all of them.
 
-Read the full output only when 1–3 disagree with the delegate's own report. **A [zero exit is not an acceptance signal](references/playbook.md#why-a-zero-exit-proves-nothing).**
+Read the full output only when those three disagree with the delegate's own report. **A zero exit is not an acceptance signal** — it means the CLI ran, not that the work is right.
+
+Commit or stash before delegating, so `git diff` shows exactly what the delegate did and `git checkout --` undoes it.
 
 ## Mind the context window
 
-The whole job — prompt, every file it reads, its own reasoning and edits — must fit. Estimate it (bytes ÷ 4 ≈ tokens); take the window figure from what the harness reports at runtime, not the model card, and **never guess it**.
+The whole job — prompt, every file it reads, its own reasoning and edits — must fit the backend's window, which is far smaller than yours. Estimate it (bytes ÷ 4 ≈ tokens); take the figure from what the harness reports at runtime, never from memory.
 
-Over the window, chunk into independent slices — one directory, one log segment per run. Give exact paths; never "scan the repo." [Exhaustion shows up in the result](references/playbook.md#context-window-exhaustion-seen-from-the-outside), not in an error: split smaller and retry.
+Over the window, chunk into independent slices — one directory, one log segment per run. Give exact paths; never "scan the repo." Exhaustion shows up as truncated edits or ignored late instructions, not as an error: split smaller and retry.
+
+## When NOT to delegate
+
+Architecture/design, debugging that needs reasoning, security-sensitive changes, work depending on **decisions made earlier in this conversation**, jobs where a wrong cheap-model edit is costly to catch, or one that can't be sliced without whole-codebase context.
+
+That third item is narrower than it sounds: what disqualifies a job is depending on something the prompt *can't restate*. In doubt about **judgment**, keep it; about **size**, the threshold decides.
+
+## Setup (one time)
+
+Each entry in the list must be an **executable on `PATH`** — a shell alias won't do, since these run non-interactively. A backend is usually a two-line wrapper around a CLI pointed at a cheaper provider:
+
+```sh
+#!/bin/sh
+# ~/.local/bin/claude-9arm — free, flaky, so it goes first
+exec claude --settings "$HOME/.claude-9arm.json" --model=qwen3.6-35b-a3b "$@"
+```
+
+```sh
+#!/bin/sh
+# ~/.local/bin/claude-openrouter — paid, reliable, the backstop
+exec claude --settings "$HOME/.claude-openrouter.json" --model=deepseek/deepseek-v4-flash-0731 "$@"
+```
+
+Each `--settings` file carries that provider's base URL and key. Then, in your shell profile:
+
+```bash
+export DELEGATE_BACKENDS="claude-9arm;claude-openrouter"
+```
+
+To stop per-call permission prompts, allow the wrappers in settings (the `update-config` skill does this):
+
+```json
+{ "permissions": { "allow": ["Bash(claude-9arm:*)", "Bash(claude-openrouter:*)"] } }
+```

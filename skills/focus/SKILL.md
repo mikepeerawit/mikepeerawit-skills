@@ -5,9 +5,7 @@ description: Keeps a long Claude Code task on-track — breaks out of looping/ci
 
 # Focus
 
-> Adapted from [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — the original was already model-agnostic, so this is a rename plus a self-contained handoff procedure. Credit to 9arm for the underlying design.
-
-Long, multi-step work fails four ways: **looping**, **over-thinking**, **drifting off the ask**, and **losing what you learned**. Run the checklist below **before each step**. When a trigger fires, do the matching action — don't deliberate about it.
+Long, multi-step work fails four ways: **looping**, **over-thinking**, **drifting off the ask**, and **losing what you learned**. Run the checklist below **before each step**. When a trigger fires, do the matching action — don't deliberate about it. Adapted from [`qwenchance`](https://github.com/thananon/9arm-skills) by 9arm.
 
 ## Before each step — run this
 
@@ -17,7 +15,7 @@ Long, multi-step work fails four ways: **looping**, **over-thinking**, **driftin
 | **Over-thinking?** | You've reasoned past ~1000 words without acting | Stop. Act on your current best decision, or ask the user one question |
 | **Still on the ask?** | You're about to do work the user didn't request, or you've dropped part of what they did | Restate the ask in one line; cut the extra or reinstate the missing part |
 | **Context tight?** | A low-context reminder appeared, **or** 2+ budget signals hold (§3) | Reminder → hand off (§4). Signals → checkpoint (§3) |
-| **Offloadable?** | The next step is a large read, repo-wide search, bulk mechanical edit, or pass-fail suite run — **and** it clears the size bar in §5 | Hand it to a delegate-style skill if one is installed, so its output never enters this window (§5) |
+| **Offloadable?** | The next step is a large read, repo-wide search, bulk mechanical edit, or pass-fail suite run (§5) | Hand it to a cheaper model so its output never enters this window |
 
 If nothing fires, take the step.
 
@@ -41,9 +39,9 @@ When a loop fires, **stop** and do exactly one:
 
 Never repeat a failed action hoping for a different result.
 
-**Retry cap:** never run the same failing command a 3rd time. Can't get something working (a command, a test runner, an import) after ~3 attempts — *even varied ones* — STOP and ask the user; don't grind through more variations.
+**Retry cap:** never run the same failing command a 3rd time. Can't get something working after ~3 attempts — *even varied ones* — STOP and ask the user.
 
-**Don't edit blind** — it's the top loop source. Read enough to know the change is correct *before* editing. After each edit, verify it (read the diff / run it / run the test) **before** the next step. One edit → one check.
+**Don't edit blind** — it's the top loop source. Read enough to know the change is correct *before* editing, and verify each edit before the next step. One edit → one check.
 
 ## 2. Thinking — keep it bounded
 
@@ -55,24 +53,24 @@ Cap reasoning at **~1000 words per step**. Past that, you're deliberating instea
 
 ## 3. Context budget — checkpoint early, hand off only when told
 
-**Authoritative:** a `<system-reminder>` about low context or approaching auto-compaction. → **Hand off now** (§4). Don't start new work.
+**Authoritative:** a `<system-reminder>` about low context or approaching auto-compaction → **hand off now** (§4). Don't start new work.
 
 **Nothing else triggers a handoff.** Compaction carries the work forward; a premature `/clear` throws away context you'd have kept for free. What compaction *does* drop is why you ruled things out — so context pressure triggers a **checkpoint**, not an exit.
 
-Count how many of these are true right now:
+Count how many are true right now:
 
 - [ ] 20+ assistant turns into the task.
 - [ ] Read 5+ files, or any one huge file/log/dump.
 - [ ] Long tool outputs you keep scrolling back to.
 - [ ] 3+ plan steps still left.
 
-**0 or 1 → continue** working normally. **2+ → checkpoint:** land durable artifacts (save the file, commit, write the result), append to the **Ruled out** list (§4), then keep going. Count first, don't judge by feel.
+**0 or 1 → continue.** **2+ → checkpoint:** land durable artifacts (save the file, commit, write the result), append to the **Ruled out** list (§4), then keep going. Count first, don't judge by feel.
 
-Before an **expensive** step (large read, new subtask, long generation), check whether you can offload it entirely (§5) — that's cheaper than absorbing it. Then checkpoint if the count says so, offloaded or not: offloading keeps the output out of your window, but it doesn't preserve what you've already learned.
+Before an expensive step, check whether you can offload it (§5) — cheaper than absorbing it. Then checkpoint if the count says so, offloaded or not: offloading keeps new output out of your window, but it doesn't preserve what you've already learned.
 
 ## 4. The handoff note
 
-Compaction summarizes what happened; it does **not** preserve why you ruled things out. That's what the note is for — so write it as you go, not once at the end.
+Compaction summarizes what happened; it does **not** preserve why you ruled things out. Write the note as you go, not once at the end.
 
 - **Goal** — the task, in one sentence.
 - **Done** — what has landed: files changed, commands that worked, decisions already made.
@@ -81,17 +79,15 @@ Compaction summarizes what happened; it does **not** preserve why you ruled thin
 
 Keep it in a file (`HANDOFF.md` or a scratch file) and update it at each checkpoint — chat scrollback doesn't survive compaction either.
 
-**On the authoritative low-context reminder:** land durable artifacts, finish the note, then tell the user plainly — *"Context is getting tight. I've landed X and written the handoff to Y. Start a fresh session with `/clear`."* You cannot clear or compact the context yourself; the user runs `/clear` (fresh start) or `/compact` (summarize in place).
-
-If a handoff or compaction skill is installed in this environment, use it to write the note — but check that it exists first. Never call a skill by name on the assumption it's available.
+**On the authoritative low-context reminder:** land durable artifacts, finish the note, then tell the user plainly — *"Context is getting tight. I've landed X and written the handoff to Y. Start a fresh session with `/clear`."* You cannot clear or compact the context yourself.
 
 ## 5. Offload before you spend the window
 
-The cheapest context is the context you never fill. A large read, a repo-wide search, a bulk mechanical edit, or a suite run you only need pass-fail from can be handed to a cheaper model, so only its *conclusion* enters this window instead of its entire output.
+The cheapest context is the context you never fill. A large read, a repo-wide search, a bulk mechanical edit, or a suite run you only need pass-fail from can go to a cheaper model, so only its *conclusion* lands here.
 
-**Check the skill list first.** If a delegate-style skill is installed, use it. If none is, do the step yourself — never call a skill by name on the assumption it's available, and never stall waiting for one.
+**Check the skill list first.** If a `delegate`-style skill is installed, use it and follow its rules. If none is, do the step yourself — never call a skill by name on the assumption it's available, and never stall waiting for one.
 
 Two limits, so this doesn't become its own detour:
 
 - **Only offload work that survives losing this conversation.** The offloaded step gets a self-contained prompt and none of the discussion behind it. If restating it in full is harder than doing the step, do the step.
-- **The size bar.** Offload when the step would add **>2k tokens** to this window **or** touch **>5 files**. Under *both*, take the step yourself — writing a self-contained prompt and checking the result costs more than a small step does. (A delegate skill, if installed, sets its own bar; where they differ, follow that skill's.)
+- **The size bar.** Offload when the step would add **>2k tokens** to this window **or** touch **>5 files**. Under *both*, take the step yourself. (A delegate skill sets its own bar; where they differ, follow that skill's.)
