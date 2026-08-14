@@ -1,17 +1,30 @@
 ---
 name: delegate
-description: Delegate menial, well-scoped coding tasks to a cheaper subagent model to reduce the primary model's token burn — save its tokens/quota for work that needs real reasoning. Use when the work is mechanical and low-risk — bulk renames, formatting, boilerplate, find-replace, grep-style search & summarization, reading/condensing logs or files, test/docstring/comment scaffolding, or running builds/linters/tests and reporting pass-fail. Also use when the user says "delegate this", "send it to a cheaper model", "use <model>", or "do this cheaply". Do NOT use for architecture, design, debugging judgment, security-sensitive edits, or anything needing this conversation's context.
+description: Route work that would dump a lot of tokens into this conversation to a cheaper model instead — protecting both the quota and the context window for work that needs real reasoning. Use BEFORE, not after: before reading a large file/log/dump, before a repo-wide search, before a bulk mechanical edit (renames, formatting, find-replace, boilerplate, test/docstring scaffolding), or before running a build/linter/test suite you only need pass-fail from. Rule of thumb: delegate when the job would add >2k tokens to this context OR touch >5 files; do it yourself only when it is under both. Also fires on "delegate this", "send it to a cheaper model", "use <model>", or "do this cheaply". Skip for architecture, design, debugging judgment, security-sensitive edits, or work that depends on decisions made earlier in this conversation.
 ---
 
 # Delegate
 
 > Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills), generalized beyond its original Qwen-specific setup. Credit to 9arm for the underlying design.
 
-Offload **menial, self-contained** tasks to a cheaper model, so the primary model's tokens/quota stay reserved for work that actually needs reasoning.
+Offload **bulky, self-contained** work to a cheaper model. Two things stay protected, and they're worth naming separately:
+
+- **Quota** — the primary model's budget, spent on reasoning instead of grunt work. Only a configured [`AGENT_CMD`](#backends-ranked) moves that spend off your Anthropic quota *entirely*; the rank-0 fallback still reduces it, since a cheap model burns far fewer tokens on the same grunt work than the primary would inline.
+- **Context window** — the delegate's output never enters *this* conversation. Every backend delivers this, and it's usually the one that matters: long sessions die of context exhaustion far more often than of quota.
+
+## Is it worth delegating?
+
+Delegating isn't free — you pay to write a self-contained prompt and to verify the result. Delegate once the job clears **either** bar: it would add **>2k tokens** to this context, **or** it touches **>5 files**. Do it yourself only when it's under **both**.
+
+Either bar alone is enough. A 40-file rename of one-line changes is barely 2k tokens and still worth delegating, because 40 files is 40 chances to put a diff in your window.
+
+Above the bar, delegate. The payoff scales with how much output would otherwise land in your window, so a 5,000-line log or a 40-file rename is where this earns its keep.
+
+Size is a measurement, not a judgment call — estimate it (bytes ÷ 4 ≈ tokens) rather than deliberating.
 
 ## Workflow
 
-1. **Confirm it's delegable** — menial and low-risk. Needs design judgment or this chat's context? Do it yourself ([when NOT to](#when-not-to-delegate)).
+1. **Catch it before you act** — the trigger is the moment *before* a large read, a repo-wide search, a bulk mechanical edit, or a suite run you only need pass-fail from. Check the [threshold](#is-it-worth-delegating), then that it's [not on the keep-it list](#when-not-to-delegate).
 2. **Pick the backend** by [rank](#backends-ranked) — a configured `AGENT_CMD` always beats rank 0; among configured ones, cheapest first unless someone's waiting or the task needs a bigger window.
 3. **Size it** — it must fit that backend's [context window](#mind-the-context-window); split large jobs into bounded chunks.
 4. **[Make it safe to be wrong](#make-it-safe-to-be-wrong)** — commit or stash first, grant the narrowest tool set.
@@ -20,7 +33,11 @@ Offload **menial, self-contained** tasks to a cheaper model, so the primary mode
 
 ## When NOT to delegate
 
-Architecture/design, debugging that needs reasoning, security-sensitive changes, anything requiring this conversation's context, or tasks where a wrong cheap-model edit is costly to catch. If a job can't be sliced cleanly — it needs whole-codebase context to do correctly — that's also a sign. When in doubt, keep it.
+Architecture/design, debugging that needs reasoning, security-sensitive changes, work that depends on **decisions made earlier in this conversation**, or tasks where a wrong cheap-model edit is costly to catch. If a job can't be sliced cleanly — it needs whole-codebase context to do correctly — that's also a sign.
+
+Read that third item narrowly. *Every* task you meet is happening inside a conversation; what disqualifies a job is depending on a decision, constraint or preference established here that the prompt can't restate. If you can write it down in the prompt, it isn't conversation context — it's just an instruction.
+
+In doubt about **judgment**, keep it. In doubt about **size**, the [threshold](#is-it-worth-delegating) decides — don't relitigate a measurement as a judgment call.
 
 ## Backends, ranked
 
@@ -31,9 +48,15 @@ The real axis is **which quota you spend**, not raw price.
 | 1+ | `AGENT_CMD` — a headless agentic CLI on a cheaper backend | one-time, per model | that provider's credit, or nothing if it's free | **whenever one is configured** |
 | 0 | Native subagent — the subagent tool with a cheap model (e.g. `model: "haiku"`) | none | the same Anthropic quota you're protecting | fallback only |
 
-**If an `AGENT_CMD` backend is configured, use it. Never pick rank 0 over a configured backend** — rank 0 bills the very quota this skill exists to protect, so choosing it while a cheaper backend sits configured defeats the point. Check for `AGENT_CMD` before you decide; don't assume it's absent.
+**If an `AGENT_CMD` backend is configured, use it. Never pick rank 0 over a configured backend that can do the job** — rank 0 bills the very quota this skill exists to protect, so choosing it while a cheaper backend sits configured defeats the point. Check for `AGENT_CMD` before you decide; don't assume it's absent.
 
-Rank 0 is the fallback, for exactly two cases: nothing is configured, or every configured backend is down. When nothing is configured, use rank 0 and say so — don't stop to ask a config question before doing menial work, that costs more than it saves. Rank 0 still keeps the job's token dump out of *this* conversation's window, which is worth having on its own; it just isn't the saving the skill advertises.
+Rank 0 is the fallback, for three cases and no others:
+
+1. **Nothing is configured.** Use rank 0 and say so — don't stop to ask a config question before doing menial work, that costs more than it saves.
+2. **Every configured backend is down.** See [when a backend fails](#when-a-backend-fails).
+3. **No configured backend's window fits the job**, and the job can't be [chunked](#mind-the-context-window) without the pieces stopping making sense. Cost never justifies silent truncation — a cheap backend that quietly drops half your log costs more to recover from than the tokens it saved. Same rule if you need a model Anthropic serves and your backends don't.
+
+Never cost, convenience or speed. Rank 0 still keeps the job's token dump out of *this* conversation's window, which is worth having on its own; it just isn't the full saving the skill advertises.
 
 Keep configured backends as an ordered list, cheapest first, each carrying its `CONTEXT_WINDOW`, cost and typical latency. Take `CONTEXT_WINDOW` from what the harness reports at runtime, not the model card — they routinely disagree and the card is the optimistic one. **Never guess a configured backend's window:** guessing causes silent truncation, which is the failure you can't see.
 
@@ -41,11 +64,11 @@ Setting `AGENT_CMD` up the first time is covered in [`references/setup.md`](refe
 
 ### Choosing between them
 
-This is about ordering the **configured** backends among themselves — rank 0 isn't in the running unless none of them is. Cost-first is the default; override it for the task in front of you:
+This is about ordering the **configured** backends among themselves. Rank 0 enters only on one of its three cases above — never as a cheaper-feeling alternative. Cost-first is the default; override it for the task in front of you:
 
 - **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent. A wrapper that ranks internally tries the cheap backend first regardless, unless the user has already told you theirs supports [pinning](references/setup.md#optional-pinning-one-backend) — then prefer a pin over re-running. Otherwise take the default order rather than stopping to ask: an unhonoured pin is ignored in silence and reads exactly like a working one.
 - **Background, parallel or batch work** → keep the default order. Nobody's watching the clock.
-- **Needs more context than rank 1 offers** → drop to the first backend whose window fits, rather than splitting the task into chunks that no longer make sense on their own.
+- **Needs more context than rank 1 offers** → drop to the first backend whose window fits, rather than splitting the task into chunks that no longer make sense on their own. If no configured window fits, that's rank-0 case 3 — take it rather than truncating.
 
 ### When a backend fails
 
@@ -77,24 +100,34 @@ The delegate's output lands in *your* context verbatim. If checking its work cos
 
 ### Worked example
 
+A job that clears the [threshold](#is-it-worth-delegating) — 31 files, none of which need to enter your window:
+
 ```
-In /Users/x/proj/src/api.ts, remove unused imports and sort the remaining
-import statements alphabetically. Change nothing else.
+In /Users/x/proj/src, rename the exported symbol `fetchUser` to `getUser`
+everywhere it appears — its declaration in /Users/x/proj/src/api/user.ts,
+every import of it, and every call site. It appears in 31 files.
+Rename nothing else, and do not touch filenames, comments or string
+literals — leave any `fetchUser` inside those exactly as it is.
 Then run `npx tsc --noEmit` from /Users/x/proj.
-Done = the file still parses and tsc reports no new errors.
-Reply with at most 5 lines: the imports you removed, then PASS or FAIL for tsc.
+Done = (a) no `fetchUser` remains in *code* under src, and (b) tsc
+reports no new errors.
+Reply with at most 5 lines: the file count you changed, then PASS or
+FAIL for (a) and for (b), then every surviving `fetchUser` line as
+`path:line` — those should be comments and strings only.
 ```
 
-Verify with `git diff --stat` (one file, imports only?) and `npx tsc --noEmit`. Neither re-reads the file.
+Verify with `git diff --stat` (≈31 files, small per-file diffs?), `npx tsc --noEmit`, and `rg -wn fetchUser src` — whose output should match the surviving lines it reported, one for one. None of those reads a changed file.
 
-Bad: `clean up the imports` — no path, no criteria, no return contract.
+Note what the carve-out costs: because comments and strings are excluded, "no `fetchUser` anywhere" is *not* the criterion, and a bare `rg` returning hits is not a failure. Say so in the prompt, or the delegate will either edit comments it was told to leave or report FAIL on correct work.
+
+Bad: `rename fetchUser to getUser` — no root path, no scope limit, no count to check against, no return contract.
 
 ## Verify cheaply
 
 You are the check on a cheaper, less reliable model — but don't pay full price for it. In order:
 
 1. **Run the acceptance criterion** — the test, the build, the linter. Machine-checked beats read.
-2. **`git diff --stat`** — right files, plausible size? A 400-line diff for "sort imports" fails without reading a line of it.
+2. **`git diff --stat`** — right files, plausible size? A 31-file rename that comes back touching 4 files, or rewriting 400 lines in one of them, fails without reading a line of it.
 3. **Spot-check one file** — the trickiest one, not all of them.
 
 Read the full output only when 1–3 disagree with the delegate's own report.
@@ -111,6 +144,8 @@ The whole job — prompt + every file it reads + its own reasoning and edits —
 - **Exhaustion symptoms** when verifying: truncated edits, ignored later instructions, a summary omitting files it was told to touch. Split smaller and retry.
 
 ## Running it
+
+On a configured backend:
 
 ```bash
 $AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep   # add Edit Write Bash only if the task needs them

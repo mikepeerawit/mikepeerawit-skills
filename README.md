@@ -16,15 +16,19 @@ A long coding session burns through your Claude quota, and a lot of that burn is
 
 [`delegate`](skills/delegate/SKILL.md) teaches Claude to spot that kind of work and hand it to a cheaper model, then check the result the cheap way — running the tests, glancing at `git diff --stat` — rather than re-reading everything the cheap model produced. Checking work you delegated shouldn't cost as much as doing it yourself.
 
-It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, anything that depends on your conversation so far — those stay with the main model.
+There's a second benefit that's easy to miss, and it's often the bigger one: the cheap model's output never lands in your main session. A 5,000-line log gets read somewhere else and comes back as three lines. Long sessions usually die of a full context window rather than an exhausted quota, so keeping the bulk out matters even when you aren't watching the bill.
 
-**Cost to get started: nothing.** With no setup at all it hands the work to a cheap Claude subagent — that keeps the grunt work out of your main session's context window, but it still bills your Anthropic quota. To get the actual savings, point it at an outside provider once ([`references/setup.md`](skills/delegate/references/setup.md)); after that it always prefers that provider, and only falls back to the Claude subagent if the provider is down.
+It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, work that depends on a decision you made earlier in the conversation — those stay with the main model. It also won't bother for small jobs, where writing the instructions and checking the result costs more than just doing the work.
+
+**Cost to get started: nothing.** With no setup at all it hands the work to a cheap Claude subagent — that keeps the grunt work out of your main session's context window, and a cheap model burns fewer tokens than your main one would, but it's still your Anthropic quota paying. To move the spend off Anthropic entirely, point it at an outside provider once ([`references/setup.md`](skills/delegate/references/setup.md)); after that it always prefers that provider, and only falls back to the Claude subagent if the provider is down.
 
 ### `focus` — keep a long task from going off the rails
 
 Long multi-step work fails in a few recognizable ways. The agent re-reads the same file for the third time. It reasons in circles without doing anything. It quietly wanders into work you never asked for, or quietly drops part of what you did ask for. Or it runs out of room and forgets what it learned an hour ago.
 
 [`focus`](skills/focus/SKILL.md) gives Claude a short checklist to run before each step, with a specific fix for each failure. It also handles the handoff when a session is about to run out of context, so the next session starts with what the last one learned instead of from scratch.
+
+If you install both, the checklist also spots steps worth handing to `delegate` before they fill the window — but `focus` works on its own, and skips that check when `delegate` isn't there.
 
 ## Install
 
