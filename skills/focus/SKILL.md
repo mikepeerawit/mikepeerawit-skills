@@ -17,6 +17,7 @@ Long, multi-step work fails four ways: **looping**, **over-thinking**, **driftin
 | **Over-thinking?** | You've reasoned past ~1000 words without acting | Stop. Act on your current best decision, or ask the user one question |
 | **Still on the ask?** | You're about to do work the user didn't request, or you've dropped part of what they did | Restate the ask in one line; cut the extra or reinstate the missing part |
 | **Context tight?** | A low-context reminder appeared, **or** 2+ budget signals hold (§3) | Reminder → hand off (§4). Signals → checkpoint (§3) |
+| **Offloadable?** | The next step is a large read, repo-wide search, bulk mechanical edit, or pass-fail suite run — **and** it clears the size bar in §5 | Hand it to a delegate-style skill if one is installed, so its output never enters this window (§5) |
 
 If nothing fires, take the step.
 
@@ -67,7 +68,7 @@ Count how many of these are true right now:
 
 **0 or 1 → continue** working normally. **2+ → checkpoint:** land durable artifacts (save the file, commit, write the result), append to the **Ruled out** list (§4), then keep going. Count first, don't judge by feel.
 
-Before an **expensive** step (large read, new subtask, long generation), checkpoint first if the count says so. If a delegate-style skill is installed here, offload large reads to it so the dump never enters this window — check that it exists first.
+Before an **expensive** step (large read, new subtask, long generation), check whether you can offload it entirely (§5) — that's cheaper than absorbing it. Then checkpoint if the count says so, offloaded or not: offloading keeps the output out of your window, but it doesn't preserve what you've already learned.
 
 ## 4. The handoff note
 
@@ -83,3 +84,14 @@ Keep it in a file (`HANDOFF.md` or a scratch file) and update it at each checkpo
 **On the authoritative low-context reminder:** land durable artifacts, finish the note, then tell the user plainly — *"Context is getting tight. I've landed X and written the handoff to Y. Start a fresh session with `/clear`."* You cannot clear or compact the context yourself; the user runs `/clear` (fresh start) or `/compact` (summarize in place).
 
 If a handoff or compaction skill is installed in this environment, use it to write the note — but check that it exists first. Never call a skill by name on the assumption it's available.
+
+## 5. Offload before you spend the window
+
+The cheapest context is the context you never fill. A large read, a repo-wide search, a bulk mechanical edit, or a suite run you only need pass-fail from can be handed to a cheaper model, so only its *conclusion* enters this window instead of its entire output.
+
+**Check the skill list first.** If a delegate-style skill is installed, use it. If none is, do the step yourself — never call a skill by name on the assumption it's available, and never stall waiting for one.
+
+Two limits, so this doesn't become its own detour:
+
+- **Only offload work that survives losing this conversation.** The offloaded step gets a self-contained prompt and none of the discussion behind it. If restating it in full is harder than doing the step, do the step.
+- **The size bar.** Offload when the step would add **>2k tokens** to this window **or** touch **>5 files**. Under *both*, take the step yourself — writing a self-contained prompt and checking the result costs more than a small step does. (A delegate skill, if installed, sets its own bar; where they differ, follow that skill's.)

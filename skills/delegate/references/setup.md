@@ -4,9 +4,9 @@ One-time setup, once per model you want to delegate to. Read this only when `AGE
 
 ## Do you actually need this?
 
-**No** — if you just want menial work off your main model. The skill's rank 0 (a cheap Claude subagent) needs no setup, no key, no config, and works right now.
+**No** — if you only want the grunt work kept out of your main session's context window. The skill's rank 0 (a cheap Claude subagent) needs no setup, no key, no config, and works right now. It still bills your Anthropic quota, though.
 
-**Yes** — if you want delegated work billed to *someone other than Anthropic*, or you need a model Anthropic doesn't serve. That's the only thing this page buys you.
+**Yes** — if you want delegated work billed to *someone other than Anthropic*, or you need a model Anthropic doesn't serve. Set one up and the skill prefers it over rank 0 from then on, every time.
 
 ## What you're building
 
