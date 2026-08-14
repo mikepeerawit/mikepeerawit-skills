@@ -12,7 +12,7 @@ Offload **menial, self-contained** tasks to a cheaper model, so the primary mode
 ## Workflow
 
 1. **Confirm it's delegable** — menial and low-risk. Needs design judgment or this chat's context? Do it yourself ([when NOT to](#when-not-to-delegate)).
-2. **Pick the backend** by [rank](#backends-ranked) — cheapest first, unless someone's waiting or the task needs a bigger window.
+2. **Pick the backend** by [rank](#backends-ranked) — a configured `AGENT_CMD` always beats rank 0; among configured ones, cheapest first unless someone's waiting or the task needs a bigger window.
 3. **Size it** — it must fit that backend's [context window](#mind-the-context-window); split large jobs into bounded chunks.
 4. **[Make it safe to be wrong](#make-it-safe-to-be-wrong)** — commit or stash first, grant the narrowest tool set.
 5. **[Write a self-contained prompt](#writing-the-prompt-most-important-step)** — absolute paths, acceptance criteria, return contract. This step decides success.
@@ -26,12 +26,14 @@ Architecture/design, debugging that needs reasoning, security-sensitive changes,
 
 The real axis is **which quota you spend**, not raw price.
 
-| Rank | Backend | Setup | Spends |
-|---|---|---|---|
-| 0 | Native subagent — the subagent tool with a cheap model (e.g. `model: "haiku"`) | none | the same Anthropic quota you're protecting |
-| 1+ | `AGENT_CMD` — a headless agentic CLI on a cheaper backend | one-time, per model | that provider's credit, or nothing if it's free |
+| Rank | Backend | Setup | Spends | Use when |
+|---|---|---|---|---|
+| 1+ | `AGENT_CMD` — a headless agentic CLI on a cheaper backend | one-time, per model | that provider's credit, or nothing if it's free | **whenever one is configured** |
+| 0 | Native subagent — the subagent tool with a cheap model (e.g. `model: "haiku"`) | none | the same Anthropic quota you're protecting | fallback only |
 
-Rank 0 always works and needs no config — **if no `AGENT_CMD` is configured, use rank 0 and say so.** Don't stop to ask a config question before doing menial work; that costs more than it saves. Shell out to rank 1+ only to move spend **off** your Anthropic quota, or to reach a model Anthropic doesn't serve.
+**If an `AGENT_CMD` backend is configured, use it. Never pick rank 0 over a configured backend** — rank 0 bills the very quota this skill exists to protect, so choosing it while a cheaper backend sits configured defeats the point. Check for `AGENT_CMD` before you decide; don't assume it's absent.
+
+Rank 0 is the fallback, for exactly two cases: nothing is configured, or every configured backend is down. When nothing is configured, use rank 0 and say so — don't stop to ask a config question before doing menial work, that costs more than it saves. Rank 0 still keeps the job's token dump out of *this* conversation's window, which is worth having on its own; it just isn't the saving the skill advertises.
 
 Keep configured backends as an ordered list, cheapest first, each carrying its `CONTEXT_WINDOW`, cost and typical latency. Take `CONTEXT_WINDOW` from what the harness reports at runtime, not the model card — they routinely disagree and the card is the optimistic one. **Never guess a configured backend's window:** guessing causes silent truncation, which is the failure you can't see.
 
@@ -39,7 +41,7 @@ Setting `AGENT_CMD` up the first time is covered in [`references/setup.md`](refe
 
 ### Choosing between them
 
-Cost-first is the default — that's the point of the skill. Override it for the task in front of you:
+This is about ordering the **configured** backends among themselves — rank 0 isn't in the running unless none of them is. Cost-first is the default; override it for the task in front of you:
 
 - **Someone's waiting on the result** → fastest backend that fits. A 50% latency saving is worth a cent. A wrapper that ranks internally tries the cheap backend first regardless, unless the user has already told you theirs supports [pinning](references/setup.md#optional-pinning-one-backend) — then prefer a pin over re-running. Otherwise take the default order rather than stopping to ask: an unhonoured pin is ignored in silence and reads exactly like a working one.
 - **Background, parallel or batch work** → keep the default order. Nobody's watching the clock.
@@ -47,7 +49,7 @@ Cost-first is the default — that's the point of the skill. Override it for the
 
 ### When a backend fails
 
-- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. If `AGENT_CMD` announced a fallback of its own, it already did this for you — don't re-run. Otherwise drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience. A backend you pinned has no next one — that's what the pin bought; drop it deliberately and say so, or report the failure.
+- **Backend-level** (connection refused, 5xx, gateway timeout, auth rejected): the model never ran. If `AGENT_CMD` announced a fallback of its own, it already did this for you — don't re-run. Otherwise drop to the next backend and re-run the *same* prompt. Don't retry the dead one — outages outlast your patience. A backend you pinned has no next one — that's what the pin bought; drop it deliberately and say so, or report the failure. Only once **every** configured backend is exhausted does rank 0 come into play, and it puts the spend back on the quota you were protecting — so say that out loud rather than falling into it quietly.
 - **Task-level** (it ran, but the output is wrong, truncated, or ignored instructions): falling back gains nothing, because a cheaper model won't do better. Fix the prompt, split the task, or do it yourself.
 
 Tell the user whenever a fallback happens, and why — whether you or `AGENT_CMD` performed it. Silently spending money on a paid backend because a free one was down is a surprise, not a convenience.
@@ -110,10 +112,10 @@ The whole job — prompt + every file it reads + its own reasoning and edits —
 
 ## Running it
 
-Rank 0 needs nothing special — pass the same self-contained prompt to the subagent tool with a cheap model. For `AGENT_CMD`:
-
 ```bash
 $AGENT_CMD -p "<self-contained prompt>" --allowedTools Read Glob Grep   # add Edit Write Bash only if the task needs them
 ```
+
+On the rank-0 fallback, pass that same self-contained prompt to the subagent tool with a cheap model instead — nothing else changes.
 
 Those flags are Claude Code's; other CLIs differ. Headless flags, tool scoping, working directory, structured output and background/parallel runs are all in [`references/setup.md`](references/setup.md).

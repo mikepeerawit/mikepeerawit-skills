@@ -18,7 +18,7 @@ A long coding session burns through your Claude quota, and a lot of that burn is
 
 It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, anything that depends on your conversation so far — those stay with the main model.
 
-**Cost to get started: nothing.** Out of the box it uses a cheap Claude subagent, which needs no setup or API key. If you want the savings to land on *someone else's* bill instead of your Anthropic quota, you can point it at an outside provider — that's the one-time setup in [`references/setup.md`](skills/delegate/references/setup.md).
+**Cost to get started: nothing.** With no setup at all it hands the work to a cheap Claude subagent — that keeps the grunt work out of your main session's context window, but it still bills your Anthropic quota. To get the actual savings, point it at an outside provider once ([`references/setup.md`](skills/delegate/references/setup.md)); after that it always prefers that provider, and only falls back to the Claude subagent if the provider is down.
 
 ### `focus` — keep a long task from going off the rails
 
