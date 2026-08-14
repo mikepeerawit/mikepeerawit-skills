@@ -88,28 +88,16 @@ That third item is narrower than it sounds: what disqualifies a job is depending
 
 ## Setup (one time)
 
-Each entry in the list must be an **executable on `PATH`** — a shell alias won't do, since these run non-interactively. A backend is usually a two-line wrapper around a CLI pointed at a cheaper provider:
+Only needed when `DELEGATE_BACKENDS` is unset — the user sets this up, not you. Full walkthrough in the repo README; the shape:
 
 ```sh
 #!/bin/sh
-# ~/.local/bin/claude-9arm — free, flaky, so it goes first
-exec claude --settings "$HOME/.claude-9arm.json" --model=qwen3.6-35b-a3b "$@"
+# ~/.local/bin/claude-cheap — an executable on PATH, not an alias
+exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
 ```
-
-```sh
-#!/bin/sh
-# ~/.local/bin/claude-openrouter — paid, reliable, the backstop
-exec claude --settings "$HOME/.claude-openrouter.json" --model=deepseek/deepseek-v4-flash-0731 "$@"
-```
-
-Each `--settings` file carries that provider's base URL and key. Then, in your shell profile:
 
 ```bash
-export DELEGATE_BACKENDS="claude-9arm;claude-openrouter"
+export DELEGATE_BACKENDS="claude-cheap"      # or "claude-free;claude-paid"
 ```
 
-To stop per-call permission prompts, allow the wrappers in settings (the `update-config` skill does this):
-
-```json
-{ "permissions": { "allow": ["Bash(claude-9arm:*)", "Bash(claude-openrouter:*)"] } }
-```
+The `--settings` file holds that provider's base URL, key, and **all five** model slots pinned — unset slots fall through to Anthropic model IDs, which a third-party provider serves at list price. To stop per-call prompts, allow each wrapper: `"Bash(claude-cheap:*)"`.

@@ -2,50 +2,32 @@
 
 Two [Claude Code](https://claude.com/claude-code) skills for long agent sessions — one keeps the cost down, one keeps the work on-track.
 
-## New here? What a skill is
-
-A skill is a Markdown file of instructions that Claude Code loads **by itself**, when the situation calls for it. You install it once and then forget about it. Every skill starts with a description saying when it applies; Claude reads those descriptions and pulls in the matching skill mid-task.
-
-So you don't run these. You install them, and Claude reaches for them on its own — though you can always ask for one by name.
+A skill is a Markdown file Claude Code loads **by itself** when the situation calls for it. You install it once; you don't run it. Each one starts with a description of when it applies, and Claude pulls in the matching skill mid-task.
 
 ## The skills
 
-### `delegate` — stop paying frontier prices for grunt work
+### [`delegate`](skills/delegate/SKILL.md) — stop paying frontier prices for grunt work
 
-A long coding session burns through your Claude quota, and a lot of that burn is menial: renaming a symbol across 40 files, reformatting, condensing a 5,000-line log, running the test suite to see if it's green. None of that needs an expensive model.
+A lot of what burns your quota is menial: renaming a symbol across 40 files, condensing a 5,000-line log, running the suite to see if it's green. `delegate` teaches Claude to spot that work, hand it to a cheaper model, and check the result cheaply — run the tests, glance at `git diff --stat` — instead of re-reading everything the cheap model produced.
 
-[`delegate`](skills/delegate/SKILL.md) teaches Claude to spot that kind of work and hand it to a cheaper model, then check the result the cheap way — running the tests, glancing at `git diff --stat` — rather than re-reading everything the cheap model produced. Checking work you delegated shouldn't cost as much as doing it yourself.
+The bigger win is often the context window rather than the bill: the cheap model's output never lands in your session. A 5,000-line log gets read somewhere else and comes back as three lines.
 
-There's a second benefit that's easy to miss, and it's often the bigger one: the cheap model's output never lands in your main session. A 5,000-line log gets read somewhere else and comes back as three lines. Long sessions usually die of a full context window rather than an exhausted quota, so keeping the bulk out matters even when you aren't watching the bill.
+It's deliberately conservative. Architecture, debugging that needs judgment, security-sensitive edits, and work depending on a decision made earlier in the conversation all stay with the main model — as do small jobs, where writing the instructions costs more than doing the work.
 
-It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, work that depends on a decision you made earlier in the conversation — those stay with the main model. It also won't bother for small jobs, where writing the instructions and checking the result costs more than just doing the work.
+**It needs [setup](#setup-delegate-only) before it can do anything.** There's no zero-setup fallback on purpose: an earlier version handed the work to a cheap Claude subagent, which still billed the quota the skill exists to protect, and kept getting picked *over* configured providers ([ADR-0001](docs/adr/0001-delegate-requires-a-configured-backend.md)). With no backend it now says so and works inline.
 
-**Setup is required — one time, before it can do anything.** You list your backends cheapest-first in one environment variable, and that's the whole configuration:
+### [`focus`](skills/focus/SKILL.md) — keep a long task from going off the rails
 
-```bash
-export DELEGATE_BACKENDS="claude-9arm;claude-openrouter"
-```
+Long work fails in recognizable ways: re-reading the same file a third time, reasoning in circles, wandering into work nobody asked for, quietly dropping part of what was asked, or running out of room and forgetting what it learned an hour ago.
 
-Each entry is a command that runs a coding agent, headless, on a cheap model. The skill runs the first one; if that backend never answers — connection refused, 5xx, auth rejected — it re-runs the same prompt against the next, and tells you which one ended up doing the work. So a free-but-flaky provider can sit in front of a paid-but-reliable one, and you only pay when the free one is down. The last section of [`SKILL.md`](skills/delegate/SKILL.md) has the two-line wrapper scripts.
-
-There's deliberately no zero-setup fallback. An earlier version handed the work to a cheap Claude subagent when nothing was configured, which kept the bulk out of your context window but still billed the quota the skill exists to protect — and in practice it got picked *over* a configured provider, because a subagent is a tool sitting in front of the model while the backend list is an environment variable it has to go looking for. Removing the option removed the bug ([ADR-0001](docs/adr/0001-delegate-requires-a-configured-backend.md)). With no backend the skill now says so and does the work inline, rather than quietly costing you money.
-
-### `focus` — keep a long task from going off the rails
-
-Long multi-step work fails in a few recognizable ways. The agent re-reads the same file for the third time. It reasons in circles without doing anything. It quietly wanders into work you never asked for, or quietly drops part of what you did ask for. Or it runs out of room and forgets what it learned an hour ago.
-
-[`focus`](skills/focus/SKILL.md) gives Claude a short checklist to run before each step, with a specific fix for each failure. It also handles the handoff when a session is about to run out of context, so the next session starts with what the last one learned instead of from scratch.
-
-If you install both, the checklist also spots steps worth handing to `delegate` before they fill the window — but `focus` works on its own, and skips that check when `delegate` isn't there.
+`focus` is a short checklist to run before each step, with a specific fix for each failure, plus a handoff so the next session starts with what the last one learned. No setup. If `delegate` is also installed, the checklist spots steps worth handing off; if it isn't, that check is skipped.
 
 ## Install
 
-The easiest way, via [`npx skills`](https://skills.sh/):
+Via [`npx skills`](https://skills.sh/):
 
 ```bash
-npx skills add mikepeerawit/mikepeerawit-skills          # choose from a menu
-npx skills add mikepeerawit/mikepeerawit-skills --all    # install both
-npx skills add mikepeerawit/mikepeerawit-skills -s delegate   # just one
+npx skills add mikepeerawit/mikepeerawit-skills --all
 ```
 
 Or as a Claude Code plugin, typed inside Claude Code:
@@ -55,40 +37,70 @@ Or as a Claude Code plugin, typed inside Claude Code:
 /plugin install mikepeerawit-skills
 ```
 
-Either way, ask Claude to "list your skills" afterwards to confirm they landed.
+Then ask Claude to "list your skills" to confirm they landed.
+
+## Setup (`delegate` only)
+
+You need at least one **backend**: a command that runs a coding agent headless on a cheap model. Three steps.
+
+**1. Point a settings file at a cheap provider.** Anything speaking the Anthropic API works — a gateway, OpenRouter, something local. Save as `~/.claude-cheap.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-provider.example/api",
+    "ANTHROPIC_AUTH_TOKEN": "<your key>",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "<cheap-model-id>",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "<cheap-model-id>",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "<cheap-model-id>",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "<cheap-model-id>",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "<cheap-model-id>"
+  }
+}
+```
+
+Pin **all five** model slots. Any you leave unset falls through to Claude Code's built-in Anthropic model IDs, which a third-party provider will happily serve you at Anthropic list price — a ~6x difference, and the only symptom is Sonnet showing up in your provider's activity log.
+
+**2. Wrap it in an executable** on your `PATH`, say `~/.local/bin/claude-cheap`:
+
+```sh
+#!/bin/sh
+exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
+```
+
+`chmod +x` it. It has to be a real executable — a shell alias won't do, because the skill invokes backends non-interactively, where aliases don't expand.
+
+**3. List your backends, cheapest first,** in your shell profile:
+
+```bash
+export DELEGATE_BACKENDS="claude-cheap"                    # one is fine
+export DELEGATE_BACKENDS="claude-free;claude-paid"         # or several
+```
+
+With several, the skill runs the first and falls through to the next only when a backend *never answers* — connection refused, 5xx, auth rejected — then tells you which one did the work. A free-but-flaky provider can sit in front of a paid-but-reliable one, and you pay only when the free one is down. A backend that runs and returns something wrong is a different failure: the next one would fail identically on the same prompt, so the skill stops instead of spending twice.
+
+Claude Code snapshots your environment at session start, so a profile change only reaches **new** sessions. Verify:
+
+```bash
+scripts/delegate-e2e.sh --preflight   # resolves every backend, no call, free
+scripts/delegate-e2e.sh               # a real delegated job, end to end
+```
 
 ## Contributing
-
-Run the checks before opening a PR:
 
 ```bash
 node scripts/validate.mjs
 ```
 
-It verifies every skill has well-formed frontmatter, a `name` matching its directory, a description inside Claude Code's 1024-character limit, and working relative links — plus that the skill list above matches what's actually in `skills/`. CI runs the same thing on every push and PR.
+Checks frontmatter, that each `name` matches its directory, descriptions inside Claude Code's 1024-character limit, working relative links, and that the skill list above matches `skills/`. CI runs it on every push and PR. `delegate-e2e.sh` is deliberately excluded — it needs real backends and credentials, which CI has neither of.
 
-There's also a manual end-to-end check for `delegate`:
+One `SKILL.md` per skill, no `references/`. Everything in it costs tokens every time the skill fires, so it holds the procedure and nothing else — but a reference file the model has to *decide* to open is its own failure mode, and these are short enough not to need one. Background lives here; decisions live in [`docs/adr/`](docs/adr).
 
-```bash
-scripts/delegate-e2e.sh --preflight   # resolves the backend list, no call, free
-scripts/delegate-e2e.sh               # real delegated task against your backends
-```
-
-It's kept out of `validate.mjs` on purpose — it needs a configured `DELEGATE_BACKENDS` and those providers' credentials, so CI can't run it and shouldn't try.
-
-Layout:
-
-```
-skills/<name>/SKILL.md   # the whole skill — one file, loaded whenever it fires
-```
-
-One file per skill, on purpose. Everything in `SKILL.md` costs tokens every time the skill fires, so it holds the procedure and nothing else — but a `references/` directory the model has to decide to open is its own failure mode, and these skills are short enough not to need one. Background and rationale live here in the README, or in [`docs/adr/`](docs/adr) when a decision needs a record.
-
-Worth knowing if you're new to writing skills: `SKILL.md` is written for Claude to read, not for a person. It's terse and imperative on purpose.
+`SKILL.md` is written for Claude, not for a person — terse and imperative on purpose.
 
 ## Credits
 
-`delegate` and `focus` are adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) and [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills) — `delegate` generalizes the original beyond its Qwen-specific setup; `focus` is a rename of the original, which was already model-agnostic. All credit for the underlying design goes to 9arm.
+Adapted from [`qwen-agent`](https://github.com/thananon/9arm-skills/blob/main/skills/engineering/qwen-agent/SKILL.md) and [`qwenchance`](https://github.com/thananon/9arm-skills/blob/main/skills/productivity/qwenchance/SKILL.md) in [thananon/9arm-skills](https://github.com/thananon/9arm-skills). `delegate` generalizes the original past its Qwen-specific setup and adds the backend list; `focus` is a rename of an already model-agnostic skill. All credit for the underlying design goes to 9arm.
 
 ## License
 
