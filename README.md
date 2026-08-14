@@ -70,16 +70,18 @@ exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
 
 `chmod +x` it. It has to be a real executable — a shell alias won't do, because the skill invokes backends non-interactively, where aliases don't expand.
 
-**3. List your backends, cheapest first,** in your shell profile:
+**3. List your backends, cheapest first,** in a profile every shell reads — `~/.zshenv` for zsh, `~/.bashrc` for bash:
 
 ```bash
 export DELEGATE_BACKENDS="claude-cheap"                    # one is fine
 export DELEGATE_BACKENDS="claude-free;claude-paid"         # or several
 ```
 
+Not `~/.zshrc`. zsh sources it for **interactive** shells only, and your agent runs commands in non-interactive ones — so `printenv DELEGATE_BACKENDS` comes back empty there, the skill reads that as "no backend configured", and quietly does every job inline. Nothing errors; you just stop delegating. Check with `zsh -c 'printenv DELEGATE_BACKENDS'` — the non-interactive form is the one that matters, and `zsh -ic` will look fine either way.
+
 With several, the skill runs the first and falls through to the next only when a backend *never answers* — connection refused, 5xx, auth rejected — then tells you which one did the work. A free-but-flaky provider can sit in front of a paid-but-reliable one, and you pay only when the free one is down. A backend that runs and returns something wrong is a different failure: the next one would fail identically on the same prompt, so the skill stops instead of spending twice.
 
-Claude Code snapshots your environment at session start, so a profile change only reaches **new** sessions. Verify:
+Because `~/.zshenv` is read on every shell invocation, this lands in sessions already running — no restart needed. Verify:
 
 ```bash
 scripts/delegate-e2e.sh --preflight   # resolves every backend, no call, free

@@ -46,7 +46,7 @@ Work down the list until one answers. Whenever the backend that ran wasn't the f
 
 > No delegate backend available — doing this inline, so its output lands in this window.
 
-Never silently, and never stop to ask. There is deliberately no built-in fallback to a Claude subagent: it would keep the bulk out of the window but still bill the quota this skill exists to protect.
+Never silently, and never stop to ask. If a backend was expected, add one line: the export has to live in a profile non-interactive shells read — in `~/.zshrc` it reads empty here (Setup). There is deliberately no built-in fallback to a Claude subagent: it would keep the bulk out of the window but still bill the quota this skill exists to protect.
 
 ## Writing the prompt
 
@@ -97,7 +97,10 @@ exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
 ```
 
 ```bash
+# ~/.zshenv (zsh) or ~/.bashrc (bash) — NOT ~/.zshrc
 export DELEGATE_BACKENDS="claude-cheap"      # or "claude-free;claude-paid"
 ```
+
+It has to be a profile non-interactive shells read. `~/.zshrc` is interactive-only, so the `printenv` above returns empty in a tool shell and this skill goes inline every time without erroring. Confirm with `zsh -c 'printenv DELEGATE_BACKENDS'`, not `zsh -ic`.
 
 The `--settings` file holds that provider's base URL, key, and **all five** model slots pinned — unset slots fall through to Anthropic model IDs, which a third-party provider serves at list price. To stop per-call prompts, allow each wrapper: `"Bash(claude-cheap:*)"`.
