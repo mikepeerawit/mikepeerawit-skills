@@ -20,9 +20,15 @@ There's a second benefit that's easy to miss, and it's often the bigger one: the
 
 It's deliberately conservative about what it hands off. Architecture, debugging that needs judgment, security-sensitive edits, work that depends on a decision you made earlier in the conversation — those stay with the main model. It also won't bother for small jobs, where writing the instructions and checking the result costs more than just doing the work.
 
-**Setup is required — one time, before it can do anything.** You point it at an outside provider by setting `AGENT_CMD` ([`references/setup.md`](skills/delegate/references/setup.md) walks through it); from then on that's where delegated work goes, and your Anthropic quota stops paying for it.
+**Setup is required — one time, before it can do anything.** You list your backends cheapest-first in one environment variable, and that's the whole configuration:
 
-There's deliberately no zero-setup fallback. An earlier version handed the work to a cheap Claude subagent when nothing was configured, which kept the bulk out of your context window but still billed the quota the skill exists to protect — and in practice it got picked *over* a configured provider, because a subagent is a tool sitting in front of the model while `AGENT_CMD` is an environment variable it has to go looking for. Removing the option removed the bug ([ADR-0001](docs/adr/0001-delegate-requires-a-configured-backend.md)). Without a backend the skill now says so and does the work inline, rather than quietly costing you money.
+```bash
+export DELEGATE_BACKENDS="claude-9arm;claude-openrouter"
+```
+
+Each entry is a command that runs a coding agent, headless, on a cheap model. The skill runs the first one; if that backend never answers — connection refused, 5xx, auth rejected — it re-runs the same prompt against the next, and tells you which one ended up doing the work. So a free-but-flaky provider can sit in front of a paid-but-reliable one, and you only pay when the free one is down. The last section of [`SKILL.md`](skills/delegate/SKILL.md) has the two-line wrapper scripts.
+
+There's deliberately no zero-setup fallback. An earlier version handed the work to a cheap Claude subagent when nothing was configured, which kept the bulk out of your context window but still billed the quota the skill exists to protect — and in practice it got picked *over* a configured provider, because a subagent is a tool sitting in front of the model while the backend list is an environment variable it has to go looking for. Removing the option removed the bug ([ADR-0001](docs/adr/0001-delegate-requires-a-configured-backend.md)). With no backend the skill now says so and does the work inline, rather than quietly costing you money.
 
 ### `focus` — keep a long task from going off the rails
 
@@ -64,22 +70,21 @@ It verifies every skill has well-formed frontmatter, a `name` matching its direc
 There's also a manual end-to-end check for `delegate`:
 
 ```bash
-scripts/delegate-e2e.sh --preflight   # resolves AGENT_CMD, no backend call, free
-scripts/delegate-e2e.sh               # real delegated task against your backend
+scripts/delegate-e2e.sh --preflight   # resolves the backend list, no call, free
+scripts/delegate-e2e.sh               # real delegated task against your backends
 ```
 
-It's kept out of `validate.mjs` on purpose — it needs a configured `AGENT_CMD` and that provider's credentials, so CI can't run it and shouldn't try.
+It's kept out of `validate.mjs` on purpose — it needs a configured `DELEGATE_BACKENDS` and those providers' credentials, so CI can't run it and shouldn't try.
 
 Layout:
 
 ```
-skills/<name>/SKILL.md          # the skill itself — loaded in full whenever it fires
-skills/<name>/references/*.md   # detail loaded only on demand
+skills/<name>/SKILL.md   # the whole skill — one file, loaded whenever it fires
 ```
 
-That split is the main thing to respect when editing. Everything in `SKILL.md` costs tokens every single time the skill fires, so it holds the procedure and nothing else. Anything a reader needs only once — one-time setup, background, long examples — goes in `references/` behind a link.
+One file per skill, on purpose. Everything in `SKILL.md` costs tokens every time the skill fires, so it holds the procedure and nothing else — but a `references/` directory the model has to decide to open is its own failure mode, and these skills are short enough not to need one. Background and rationale live here in the README, or in [`docs/adr/`](docs/adr) when a decision needs a record.
 
-Worth knowing if you're new to writing skills: `SKILL.md` is written for Claude to read, not for a person. It's terse and imperative on purpose. The human-friendly explanations belong here in the README and in `references/`.
+Worth knowing if you're new to writing skills: `SKILL.md` is written for Claude to read, not for a person. It's terse and imperative on purpose.
 
 ## Credits
 

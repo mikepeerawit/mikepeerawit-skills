@@ -4,6 +4,11 @@ status: accepted
 
 # `delegate` requires a configured `AGENT_CMD`; the subagent fallback is removed
 
+> **Amended 2026-08-14.** The core decision stands — a configured outside backend is a hard prerequisite, and there is no fallback onto the Anthropic quota. Two details have since changed, and the text below is left as written rather than edited:
+>
+> - `AGENT_CMD` (one command) was replaced by `DELEGATE_BACKENDS` (a `;`-separated list, cheapest first). Read every mention of `AGENT_CMD` as "the configured backend list".
+> - The last consequence bullet, *"ranking is the wrapper's job, not the skill's"*, is **reversed**. Pushing fallback into a user-supplied wrapper meant the skill's multi-backend behaviour lived in a script no installer had, so in practice nobody but its author got it. `SKILL.md` now owns the ordering and the backend-level/task-level distinction; a wrapper is just one entry in the list.
+
 `delegate` used to rank two backends: a configured `AGENT_CMD` (rank 1+, spending an outside provider's credit) and a native cheap-model subagent (rank 0, spending the Anthropic quota the skill exists to protect). Rank 0 was documented as a fallback for three narrow cases. In practice it got picked *instead of* a configured backend, and adding emphasis to `SKILL.md` ("Never pick rank 0 over a configured backend", commit `3ca5ef5`) did not stop it. We are removing rank 0 entirely: `AGENT_CMD` is now a hard prerequisite.
 
 ## Why emphasis didn't work
