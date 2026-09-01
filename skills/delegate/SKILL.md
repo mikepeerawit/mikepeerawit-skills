@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Route work that would dump a lot of tokens into this conversation to a cheaper model instead, protecting the quota and context window for work that needs real reasoning. Use BEFORE, not after: before reading a large file/log/dump, before a repo-wide search, before a bulk mechanical edit (renames, formatting, find-replace, boilerplate, test/docstring scaffolding), or before running a build/linter/test suite you only need pass-fail from. Rule of thumb: delegate when the job would add >2k tokens to this context OR touch >5 files; do it yourself only when it is under both. Also fires on "delegate this", "send it to a cheaper model", "use <model>", or "do this cheaply". Skip for architecture, design, debugging judgment, security-sensitive edits, or work that depends on decisions made earlier in this conversation.
+description: Route bulky or mechanical work to a cheaper model instead of spending the frontier model on it, keeping the output out of this conversation. Use BEFORE, not after. ALWAYS delegate these regardless of size: running a build, typecheck, lint, or test suite you only need PASS/FAIL from; reading a large file, log, dump, or command output; a repo-wide search or inventory; and bulk mechanical edits (renames, formatting, find-replace, import cleanup, boilerplate, test/docstring scaffolding). Otherwise delegate once the job would add >1k tokens to this context OR touch >2 files; do it yourself only when it is under both. Applies inside other skills and slash commands too, including implementation workflows. Also fires on "delegate this", "send it to a cheaper model", "use <model>", or "do this cheaply". Skip for architecture, design, debugging judgment, security-sensitive edits, or work that depends on decisions made earlier in this conversation.
 ---
 
 # Delegate
@@ -9,7 +9,18 @@ Offload **bulky, self-contained** work to a cheaper model, so its output never e
 
 ## Is it worth delegating?
 
-Delegate once the job clears **either** bar: **>2k tokens** into this context, **or** **>5 files**. Under *both*, do it yourself — writing a standalone prompt and checking the result costs more than a small job does. Estimate the size (bytes ÷ 4 ≈ tokens); don't deliberate about it.
+**Always delegate these, whatever the size.** The output is large and the answer you actually need is tiny, so the frontier model should never be the one reading it:
+
+- Build, typecheck, lint, or test runs where you need PASS/FAIL plus the failing lines — not the full log.
+- Reading a large file, log, dump, or command output you only need a summary of.
+- Repo-wide searches and inventories — "every call site of X", "which files still use Y".
+- Bulk mechanical edits: renames, formatting, find-replace, import cleanup, boilerplate, test/docstring scaffolding.
+
+**Otherwise**, delegate once the job clears **either** bar: **>1k tokens** into this context, **or** **>2 files**. Under *both*, do it yourself — writing a standalone prompt and checking the result costs roughly 400 tokens, and a job smaller than that loses money. Estimate the size (bytes ÷ 4 ≈ tokens); don't deliberate about it.
+
+The reliable signal: **you are about to run something whose output you will skim once and never refer to again.** That is a delegate, every time.
+
+**This applies inside other skills and slash commands.** An implementation or review workflow that never mentions delegating does not override these bars — check them before each bulky step, not only at the start of a task.
 
 **Delegate jobs, not steps.** Prompt-and-verify is a fixed cost, so five steps sent separately pay it five times. Send the whole job they add up to.
 
