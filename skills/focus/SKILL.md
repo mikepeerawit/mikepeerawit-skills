@@ -90,4 +90,4 @@ The cheapest context is the context you never fill. A large read, a repo-wide se
 Two limits, so this doesn't become its own detour:
 
 - **Only offload work that survives losing this conversation.** The offloaded step gets a self-contained prompt and none of the discussion behind it. If restating it in full is harder than doing the step, do the step.
-- **The size bar.** Offload when the step would add **>2k tokens** to this window **or** touch **>5 files**. Under *both*, take the step yourself. (A delegate skill sets its own bar; where they differ, follow that skill's.)
+- **The size bar.** Offload when the step would add **>1k tokens** to this window **or** touch **>2 files**. Under *both*, take the step yourself. (A delegate skill sets its own bar; where they differ, follow that skill's.)
