@@ -117,8 +117,8 @@ Install, inside Claude Code, after `delegate` is set up:
 Then the one thing a plugin cannot do — choose your models — from a clone of this repo:
 
 ```bash
-scripts/orchestrator-settings.sh              # main thread = fable, subagents = opus
-scripts/orchestrator-settings.sh opus sonnet  # or any two aliases
+scripts/orchestrator-settings.sh              # main thread = fable[1m], subagents = opus
+scripts/orchestrator-settings.sh opus sonnet  # or any two aliases (quote ones with brackets in zsh)
 ```
 
 It sets `model` and `CLAUDE_CODE_SUBAGENT_MODEL` in `~/.claude/settings.json` (backing it up first) and adds `export DELEGATE_CHILD=1` to each launcher in `DELEGATE_BACKENDS` that lacks it. Restart the session, or open `/hooks` once, and the gate is live. Never Haiku, by design: the cheap tier is the outside backends, not a smaller Anthropic model billed to the same quota.

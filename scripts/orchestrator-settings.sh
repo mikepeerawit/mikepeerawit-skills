@@ -3,12 +3,13 @@
 # main thread, which runs subagents, and the DELEGATE_CHILD marker in each backend
 # launcher so the gate hook lets delegated runs through.
 #
-#   scripts/orchestrator-settings.sh              # main=fable, subagents=opus
-#   scripts/orchestrator-settings.sh opus sonnet  # any two model aliases
+#   scripts/orchestrator-settings.sh                # main=fable[1m], subagents=opus
+#   scripts/orchestrator-settings.sh opus sonnet    # any two model aliases
+#   scripts/orchestrator-settings.sh 'fable' opus   # quote anything with brackets in zsh
 #
 # Idempotent. Backs up ~/.claude/settings.json to settings.json.bak first.
 set -e
-MAIN="${1:-fable}"
+MAIN="${1:-fable[1m]}"
 SUB="${2:-opus}"
 SETTINGS="$HOME/.claude/settings.json"
 
