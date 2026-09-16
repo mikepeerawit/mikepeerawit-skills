@@ -65,10 +65,11 @@ Pin **all five** model slots. Any you leave unset falls through to Claude Code's
 
 ```sh
 #!/bin/sh
+export DELEGATE_CHILD=1
 exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
 ```
 
-`chmod +x` it. It has to be a real executable — a shell alias won't do, because the skill invokes backends non-interactively, where aliases don't expand.
+`chmod +x` it. It has to be a real executable — a shell alias won't do, because the skill invokes backends non-interactively, where aliases don't expand. The `DELEGATE_CHILD` line is harmless on its own; it is how the [orchestrator plugin's](#the-orchestrator-plugin) gate hook tells a delegate's runs from the main thread's.
 
 **3. List your backends, cheapest first,** in a profile every shell reads — `~/.zshenv` for zsh, `~/.bashrc` for bash:
 
@@ -88,13 +89,47 @@ scripts/delegate-e2e.sh --preflight   # resolves every backend, no call, free
 scripts/delegate-e2e.sh               # a real delegated job, end to end
 ```
 
+## The orchestrator plugin
+
+`delegate` decides case by case. The `orchestrator` plugin, in the same marketplace, turns that into a standing arrangement for the whole session: the main thread is the expensive model and does judgment only, and everything else has a cheaper home. It is opinionated on purpose, which is why it is a separate install ([ADR-0002](docs/adr/0002-delegation-is-enforced-by-a-hook.md)).
+
+Three tiers:
+
+| Tier | Who | What |
+|---|---|---|
+| Main thread | your `model` (e.g. Fable) | design, debugging judgment, security-sensitive edits, final review |
+| Opus agents | `orchestrator:scout` (read-only), `orchestrator:implementer` | reasoning work below the main thread: investigate a subsystem, make a designed multi-file change |
+| Delegate backends | whatever `DELEGATE_BACKENDS` lists | everything mechanical: searches, summaries, routine edits, **every test, typecheck, lint and build** |
+
+What it ships:
+
+- **A gate hook** (`PreToolUse` on Bash) that refuses test/typecheck/lint/build commands in the main thread and tells the model to delegate them. Deterministic where the skill is probabilistic. It lets through a backend's own runs (`DELEGATE_CHILD=1`), commands that invoke a backend, and an explicit `DELEGATE_INLINE=1` prefix for when every backend is down. Needs `jq`; without it the gate lets everything through rather than block blindly.
+- **A session-start hook** that loads the orchestration rules as context, so they survive `/clear` and compaction on every machine without a global `CLAUDE.md`.
+- **Two Opus agents**, `scout` and `implementer`, that report in twenty lines or fewer and never paste files back.
+
+Install, inside Claude Code, after `delegate` is set up:
+
+```
+/plugin marketplace add mikepeerawit/mikepeerawit-skills
+/plugin install orchestrator@mikepeerawit-skills
+```
+
+Then the one thing a plugin cannot do — choose your models — from a clone of this repo:
+
+```bash
+scripts/orchestrator-settings.sh              # main thread = fable, subagents = opus
+scripts/orchestrator-settings.sh opus sonnet  # or any two aliases
+```
+
+It sets `model` and `CLAUDE_CODE_SUBAGENT_MODEL` in `~/.claude/settings.json` (backing it up first) and adds `export DELEGATE_CHILD=1` to each launcher in `DELEGATE_BACKENDS` that lacks it. Restart the session, or open `/hooks` once, and the gate is live. Never Haiku, by design: the cheap tier is the outside backends, not a smaller Anthropic model billed to the same quota.
+
 ## Contributing
 
 ```bash
 node scripts/validate.mjs
 ```
 
-Checks frontmatter, that each `name` matches its directory, descriptions inside Claude Code's 1024-character limit, working relative links, and that the skill list above matches `skills/`. CI runs it on every push and PR. `delegate-e2e.sh` is deliberately excluded — it needs real backends and credentials, which CI has neither of.
+Checks frontmatter, that each `name` matches its directory, descriptions inside Claude Code's 1024-character limit, working relative links, and that the skill list above matches `skills/`. For every plugin in the marketplace it also checks the manifest exists, `hooks/hooks.json` parses and points at scripts that exist, and each agent file has `name`, `description` and `model`. CI runs it on every push and PR. `delegate-e2e.sh` is deliberately excluded — it needs real backends and credentials, which CI has neither of.
 
 One `SKILL.md` per skill, no `references/`. Everything in it costs tokens every time the skill fires, so it holds the procedure and nothing else — but a reference file the model has to *decide* to open is its own failure mode, and these are short enough not to need one. Background lives here; decisions live in [`docs/adr/`](docs/adr).
 
