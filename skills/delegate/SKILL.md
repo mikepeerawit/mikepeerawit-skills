@@ -59,6 +59,8 @@ Work down the list until one answers. Whenever the backend that ran wasn't the f
 
 Never silently, and never stop to ask. If a backend was expected, add one line: the export has to live in a profile non-interactive shells read — in `~/.zshrc` it reads empty here (Setup). There is deliberately no built-in fallback to a Claude subagent: it would keep the bulk out of the window but still bill the quota this skill exists to protect.
 
+If a gate hook blocks the inline run (BLOCKED: bulky command…), prefix the command with `DELEGATE_INLINE=1` and say so in one line. That prefix exists for exactly this case — never use it while a backend still answers.
+
 ## Writing the prompt
 
 The delegate has **zero** context from this conversation. A vague prompt is the #1 failure mode. Treat it as a capable-but-literal junior.
@@ -104,6 +106,7 @@ Only needed when `DELEGATE_BACKENDS` is unset — the user sets this up, not you
 ```sh
 #!/bin/sh
 # ~/.local/bin/claude-cheap — an executable on PATH, not an alias
+export DELEGATE_CHILD=1     # lets a gate hook tell the delegate's runs from the main thread's
 exec claude --settings "$HOME/.claude-cheap.json" --model=<cheap-model-id> "$@"
 ```
 

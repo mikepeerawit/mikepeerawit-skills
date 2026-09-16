@@ -124,9 +124,11 @@ if (existsSync(readmePath)) {
   if (extra.length) fail(readmePath, `README links non-existent skills: ${extra.join(", ")}`);
 }
 
-// Plugin manifests must parse and agree with each other.
+// Plugin manifests must parse and agree with each other. Every marketplace entry
+// must point at a directory holding a plugin.json of the same name; if that
+// plugin ships hooks or agents, those must be loadable too — a hook that points
+// at a missing script fails silently inside Claude Code.
 const marketplacePath = join(ROOT, ".claude-plugin", "marketplace.json");
-const pluginPath = join(ROOT, ".claude-plugin", "plugin.json");
 const readJson = (p) => {
   try {
     return JSON.parse(readFileSync(p, "utf8"));
@@ -136,14 +138,77 @@ const readJson = (p) => {
   }
 };
 
-if (existsSync(marketplacePath) && existsSync(pluginPath)) {
+/** Agent files use the same frontmatter shape as skills, plus a required `model`. */
+function checkAgents(agentsDir) {
+  for (const name of readdirSync(agentsDir).filter((n) => n.endsWith(".md")).sort()) {
+    const file = join(agentsDir, name);
+    const split = splitFrontmatter(readFileSync(file, "utf8"));
+    if (!split) {
+      fail(file, "missing or unterminated YAML frontmatter");
+      continue;
+    }
+    const fm = parseFrontmatter(split.fm);
+    for (const line of fm.__malformed ?? []) fail(file, `frontmatter line is not a flat "key: value" pair: ${JSON.stringify(line)}`);
+    const stem = name.slice(0, -3);
+    if (!fm.name) fail(file, "frontmatter is missing `name`");
+    else if (fm.name !== stem) fail(file, `frontmatter name "${fm.name}" does not match file "${stem}"`);
+    if (!fm.description) fail(file, "frontmatter is missing `description`");
+    else if (fm.description.length > MAX_DESC_LEN) fail(file, `description is ${fm.description.length} chars (max ${MAX_DESC_LEN})`);
+    if (!fm.model) fail(file, "frontmatter is missing `model` — an orchestrator agent must pin its tier");
+    if (!split.body.trim()) fail(file, "has frontmatter but no body");
+  }
+}
+
+/** Every command hook that references ${CLAUDE_PLUGIN_ROOT}/… must name a file that exists. */
+function checkHooks(pluginDir, hooksPath) {
+  const hooks = readJson(hooksPath);
+  if (!hooks) return;
+  if (!hooks.hooks || typeof hooks.hooks !== "object") {
+    fail(hooksPath, "must have a top-level `hooks` object keyed by event name");
+    return;
+  }
+  for (const [event, groups] of Object.entries(hooks.hooks)) {
+    if (!Array.isArray(groups)) {
+      fail(hooksPath, `${event}: must be an array of matcher groups`);
+      continue;
+    }
+    for (const group of groups) {
+      for (const hook of group.hooks ?? []) {
+        if (hook.type !== "command" || typeof hook.command !== "string") continue;
+        for (const [, rel] of hook.command.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) {
+          if (!existsSync(join(pluginDir, rel))) fail(hooksPath, `${event}: hook script not found: ${rel}`);
+        }
+      }
+    }
+  }
+}
+
+if (existsSync(marketplacePath)) {
   const marketplace = readJson(marketplacePath);
-  const plugin = readJson(pluginPath);
-  if (marketplace && plugin) {
+  if (marketplace) {
     if (!Array.isArray(marketplace.plugins) || marketplace.plugins.length === 0) {
       fail(marketplacePath, "`plugins` must be a non-empty array");
-    } else if (!marketplace.plugins.some((p) => p.name === plugin.name)) {
-      fail(marketplacePath, `no plugin entry matches plugin.json name "${plugin.name}"`);
+    } else {
+      for (const entry of marketplace.plugins) {
+        if (typeof entry.source !== "string") {
+          fail(marketplacePath, `plugin "${entry.name}": source must be a relative path string`);
+          continue;
+        }
+        const pluginDir = resolve(ROOT, entry.source);
+        const pluginPath = join(pluginDir, ".claude-plugin", "plugin.json");
+        if (!existsSync(pluginPath)) {
+          fail(marketplacePath, `plugin "${entry.name}": no plugin.json at ${relative(ROOT, pluginPath)}`);
+          continue;
+        }
+        const plugin = readJson(pluginPath);
+        if (plugin && plugin.name !== entry.name) {
+          fail(pluginPath, `plugin.json name "${plugin.name}" does not match marketplace entry "${entry.name}"`);
+        }
+        const hooksPath = join(pluginDir, "hooks", "hooks.json");
+        if (existsSync(hooksPath)) checkHooks(pluginDir, hooksPath);
+        const agentsDir = join(pluginDir, "agents");
+        if (existsSync(agentsDir)) checkAgents(agentsDir);
+      }
     }
   }
 }

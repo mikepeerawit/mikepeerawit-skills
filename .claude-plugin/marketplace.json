@@ -19,6 +19,19 @@
       "keywords": ["skills", "delegation", "context-management", "cost"],
       "homepage": "https://github.com/mikepeerawit/mikepeerawit-skills",
       "license": "MIT"
+    },
+    {
+      "name": "orchestrator",
+      "source": "./plugins/orchestrator",
+      "description": "Run the expensive model as an orchestrator only: Opus agents for reasoning work, the delegate backends for everything mechanical, and a hook that keeps tests, typechecks and builds out of the main thread. Requires the delegate skill, set up.",
+      "author": {
+        "name": "Peerawit Chariyawongsiri",
+        "url": "https://github.com/mikepeerawit"
+      },
+      "category": "productivity",
+      "keywords": ["orchestration", "agents", "hooks", "delegation", "cost"],
+      "homepage": "https://github.com/mikepeerawit/mikepeerawit-skills",
+      "license": "MIT"
     }
   ]
 }
