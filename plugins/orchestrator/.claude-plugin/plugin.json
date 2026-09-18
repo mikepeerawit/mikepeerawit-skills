@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
   "description": "Run the expensive model as an orchestrator only: Opus agents for reasoning work, the delegate backends for everything mechanical, and a hook that keeps tests, typechecks and builds out of the main thread.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Peerawit Chariyawongsiri",
     "url": "https://github.com/mikepeerawit"
