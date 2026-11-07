@@ -1,15 +1,9 @@
 # mikepeerawit-skills
 
-## Agent skills
+## Issues
 
-### Issue tracker
+Issues live as GitHub issues in `mikepeerawit/mikepeerawit-skills`, managed with the `gh` CLI.
 
-Issues live as GitHub issues in `mikepeerawit/mikepeerawit-skills`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+## Domain docs
 
-### Triage labels
-
-The five canonical triage roles, each label string equal to its name. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context — one `CONTEXT.md` and `docs/adr/` at the repo root, both created lazily. See `docs/agents/domain.md`.
+Single-context: the decisions are `docs/adr/` at the repo root, and a `CONTEXT.md` glossary belongs beside it once one is needed. Read the ADRs that touch an area before working in it.
